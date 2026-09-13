@@ -1,0 +1,249 @@
+.events-page {
+  max-width: 900px;
+  padding: 48px 40px 90px;
+  font-family: var(--font-family-base);
+  color: var(--text-primary);
+}
+
+.events-page .page__title {
+  font-family: var(--font-family-base);
+  font-weight: 800;
+}
+
+.events-page .page__desc {
+  color: var(--text-secondary);
+  word-break: keep-all;
+  overflow-wrap: break-word;
+}
+
+/* ===== 상단 filter + 추가 버튼 ===== */
+.ep-toolbar {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.ep-toolbar .field {
+  color: var(--text-secondary);
+}
+
+.ep-toolbar .field select {
+  border: 1px solid var(--border-soft);
+  background: var(--bg-card);
+  color: var(--text-primary);
+  border-radius: 10px;
+  padding: 7px 10px;
+  font-size: 13.5px;
+}
+
+/* ===== 등록 form ===== */
+.events-page .form {
+  background: var(--bg-card-soft);
+  border: 1px solid var(--border-soft);
+  border-radius: 16px;
+  padding: 18px;
+  margin-bottom: 20px;
+}
+
+.events-page .ep-form--inline {
+  margin-bottom: 0;
+}
+
+.events-page .field input,
+.events-page .field select,
+.events-page .field textarea {
+  border: 1px solid var(--border-soft);
+  background: var(--bg-card);
+  color: var(--text-primary);
+  border-radius: 10px;
+  padding: 8px 11px;
+}
+
+.ep-form__helper {
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  margin: 4px 0 0;
+  width: 100%;
+  word-break: keep-all;
+}
+
+/* ===== 버튼 ===== */
+.events-page .btn {
+  border: none;
+  background: var(--accent);
+  color: #fff;
+  border-radius: 999px;
+  padding: 9px 18px;
+  font-size: 13.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.events-page .btn:hover {
+  filter: brightness(0.95);
+}
+
+.events-page .btn--ghost {
+  background: transparent;
+  color: var(--text-secondary);
+  border: 1px solid var(--border-soft);
+}
+
+.events-page .btn--ghost:hover {
+  background: var(--bg-card-soft);
+  filter: none;
+}
+
+.events-page .status {
+  color: var(--text-secondary);
+}
+
+.events-page .status--error {
+  color: var(--danger-soft);
+}
+
+/* ===== 날짜별 그룹 ===== */
+.ep-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.ep-group {
+  background: var(--bg-card);
+  border: 1px solid var(--border-soft);
+  border-radius: 16px;
+  padding: 16px 20px;
+  box-shadow: var(--shadow-soft);
+}
+
+.ep-group__date {
+  font-family: var(--font-family-base);
+  font-size: 14.5px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0 0 10px;
+}
+
+.ep-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.ep-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.ep-row:last-child {
+  border-bottom: none;
+}
+
+.ep-row__main {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+}
+
+.ep-row__text {
+  min-width: 0;
+}
+
+.ep-row__title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0 0 2px;
+  word-break: keep-all;
+  overflow-wrap: break-word;
+}
+
+.ep-row__meta {
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  margin: 0;
+  word-break: keep-all;
+  overflow-wrap: break-word;
+}
+
+/* Google Calendar 연동 표시 - 제목보다 시각적으로 약하게, 작은 secondary 배지 */
+.ep-row__calendar {
+  display: inline-block;
+  margin-top: 3px;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.events-page .list__actions {
+  display: flex;
+  gap: 10px;
+  flex-shrink: 0;
+  padding-top: 2px;
+}
+
+.events-page .list--empty {
+  font-size: 13.5px;
+  color: var(--text-secondary);
+  padding: 12px 0;
+}
+
+/* ===== 구분 badge - subtle, 텍스트가 주 구분 수단 ===== */
+/* .events-page로 범위를 좁혀 crud-shared.css를 공유하는 다른 페이지(업무/주요안내 등)의
+   .badge 스타일에 영향을 주지 않는다. */
+.events-page .badge {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 9px;
+  border-radius: 999px;
+  white-space: nowrap;
+  flex-shrink: 0;
+  margin-top: 1px;
+  margin-right: 0;
+}
+
+.events-page .badge--academic,
+.events-page .badge--school,
+.events-page .badge--training,
+.events-page .badge--personal,
+.events-page .badge--other {
+  background: var(--bg-card-soft);
+  color: var(--text-secondary);
+}
+
+.events-page .badge--meeting {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+/* 협의회 - 회의와 구분되는 muted rose-purple 계열, 강한 보라색은 피함 */
+.events-page .badge--council {
+  background: #efe3ec;
+  color: #9a5f8f;
+}
+
+@media (max-width: 640px) {
+  .events-page {
+    padding: 32px 20px 60px;
+  }
+
+  .ep-toolbar {
+    flex-wrap: wrap;
+  }
+
+  .ep-row {
+    flex-wrap: wrap;
+  }
+
+  .list__actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+}

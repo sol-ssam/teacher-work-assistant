@@ -1,0 +1,30 @@
+// 회의/협의회는 "참석 확정"(attending === true)인 경우에만 Calendar 동기화 대상이 된다.
+// attending이 false거나 아직 정해지지 않은(null/undefined) 경우는 대상이 아니다.
+// 그 외 유형(학사일정/학교행사/연수/개인일정/기타 - 사용자가 직접 등록한 자신의 일정)은
+// 항상 대상이 될 수 있다.
+import { ATTENDANCE_BASED_EVENT_TYPES } from "./constants";
+
+export function isCalendarEligible(event) {
+  if (!event) return false;
+  if (ATTENDANCE_BASED_EVENT_TYPES.includes(event.type)) return event.attending === true;
+  return true;
+}
+
+export const ATTENDING_OPTIONS = [
+  { value: "true", label: "참석" },
+  { value: "false", label: "불참" },
+  { value: "unknown", label: "아직 모름" },
+];
+
+// select/radio 등 문자열 입력값을 실제 attending 값(true/false/null)으로 변환한다.
+export function parseAttendingValue(raw) {
+  if (raw === "true") return true;
+  if (raw === "false") return false;
+  return null;
+}
+
+export function attendingToSelectValue(attending) {
+  if (attending === true) return "true";
+  if (attending === false) return "false";
+  return "unknown";
+}

@@ -1,0 +1,1000 @@
+/* ============================================================
+   MonthlyProgressPage 전용 Soft Pink Assistant 스킨.
+   crud-shared.css의 공유 클래스는 ".progress-page" 조상 선택자로 범위를 좁혀
+   오버라이드한다 - 다른 페이지(Events/Tasks 등)에는 영향 없음.
+   .tt-tabs / .btn-text 는 TimetablePage.css에서 이미 전역(스코프 없이) 정의되어
+   있어 여기서도 그대로 재사용한다(중복 정의하지 않음).
+   ============================================================ */
+
+.progress-page {
+  max-width: 1100px;
+  padding: 48px 40px 90px;
+  font-family: var(--font-family-base);
+  color: var(--text-primary);
+}
+
+.progress-page .page__title {
+  font-family: var(--font-family-base);
+  font-weight: 800;
+}
+
+.progress-page .page__desc {
+  color: var(--text-secondary);
+  word-break: keep-all;
+  overflow-wrap: break-word;
+}
+
+.progress-page .page__section {
+  background: var(--bg-card);
+  border: 1px solid var(--border-soft);
+  border-radius: 20px;
+  padding: 26px 28px;
+  box-shadow: var(--shadow-soft);
+}
+
+.progress-page .page__section + .page__section {
+  margin-top: 22px;
+  padding-top: 26px;
+  border-top: none;
+}
+
+.progress-page .section__title {
+  font-family: var(--font-family-base);
+  font-size: 16.5px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0 0 14px;
+}
+
+.progress-page .section__helper {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin: 0 0 10px;
+}
+
+/* ===== 큰 탭: 진도 관리 / 학사일정 ===== */
+.pp-main-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+
+.pp-main-tabs__btn {
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  background: var(--bg-card);
+  border: 1px solid var(--border-soft);
+  border-radius: 14px;
+  padding: 12px 22px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.pp-main-tabs__btn--active {
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-color: var(--accent-soft);
+}
+
+.pp-main-tabs__btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ===== 담당 학년/연도/월 compact control bar ===== */
+.pp-context-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 16px;
+  background: var(--bg-card-soft);
+  border: 1px solid var(--border-soft);
+  border-radius: 14px;
+  padding: 10px 16px;
+  margin-bottom: 18px;
+}
+
+.pp-context-bar__prefix {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.pp-context-bar__field {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.pp-context-bar__field select,
+.pp-context-bar__field input {
+  border: 1px solid var(--border-soft);
+  background: var(--bg-card);
+  color: var(--text-primary);
+  border-radius: 8px;
+  padding: 6px 9px;
+  font-size: 13.5px;
+}
+
+.pp-context-bar__helper {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-left: auto;
+}
+
+@media (max-width: 640px) {
+  .pp-context-bar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .pp-context-bar__field {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 4px;
+  }
+
+  .pp-context-bar__helper {
+    margin-left: 0;
+  }
+}
+
+/* ===== 진도계획 보기 모드 ===== */
+.progress-plan__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.progress-plan__head .section__title {
+  margin-bottom: 0;
+}
+
+.progress-plan__view-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.progress-plan__view-item {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border-soft);
+  word-break: keep-all;
+  overflow-wrap: break-word;
+}
+
+.progress-plan__view-item:last-child {
+  border-bottom: none;
+}
+
+.progress-plan__view-index {
+  flex: 0 0 auto;
+  color: var(--accent);
+  font-weight: 700;
+  font-size: 13px;
+}
+
+.progress-plan__view-title {
+  flex: 1 1 auto;
+  font-size: 14px;
+  color: var(--text-primary);
+}
+
+.progress-plan__view-lessons {
+  flex: 0 0 auto;
+  font-size: 12.5px;
+  color: var(--text-secondary);
+}
+
+/* ===== 진도계획 편집 모드 ===== */
+.pp-plan-edit {
+  display: flex;
+  flex-direction: column;
+}
+
+.pp-plan-edit__head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 0 6px;
+  font-size: 11.5px;
+  color: var(--text-secondary);
+}
+
+.pp-plan-edit__head-title {
+  flex: 1 1 auto;
+}
+
+.pp-plan-edit__head-lessons {
+  flex: 0 0 auto;
+  width: 92px;
+}
+
+.pp-plan-edit__row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.pp-plan-edit__row:last-child {
+  border-bottom: none;
+}
+
+.pp-plan-edit__title {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: 1px solid var(--border-soft);
+  background: var(--bg-card);
+  color: var(--text-primary);
+  border-radius: 10px;
+  padding: 9px 12px;
+  font-size: 13.5px;
+  font-family: inherit;
+}
+
+.pp-plan-edit__title:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* 숫자 input + "차시" suffix를 하나의 compact control처럼 묶는다 */
+.pp-plan-edit__lessons {
+  flex: 0 0 auto;
+  width: 92px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--border-soft);
+  background: var(--bg-card);
+  border-radius: 10px;
+  padding: 6px 10px;
+}
+
+.pp-plan-edit__lessons:focus-within {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.pp-plan-edit__lessons input {
+  width: 32px;
+  border: none;
+  background: transparent;
+  padding: 0;
+  font-size: 13.5px;
+  color: var(--text-primary);
+  text-align: right;
+}
+
+.pp-plan-edit__lessons input:focus-visible {
+  outline: none;
+}
+
+.pp-plan-edit__lessons-suffix {
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.pp-plan-edit__actions {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.pp-plan-edit__btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  border: 1px solid var(--border-soft);
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  font-size: 13px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.pp-plan-edit__btn:hover:not(:disabled) {
+  background: var(--bg-card-soft);
+  color: var(--accent);
+}
+
+.pp-plan-edit__btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.pp-plan-edit__btn--danger {
+  width: auto;
+  padding: 0 10px;
+  color: var(--danger-soft);
+  font-size: 12px;
+}
+
+.pp-plan-edit__btn--danger:hover {
+  background: var(--danger-soft-bg);
+  color: var(--danger-soft);
+}
+
+.pp-plan-edit__btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+@media (max-width: 640px) {
+  .pp-plan-edit__head {
+    display: none;
+  }
+
+  .pp-plan-edit__row {
+    flex-wrap: wrap;
+    row-gap: 8px;
+  }
+
+  .pp-plan-edit__title {
+    flex: 1 1 100%;
+  }
+
+  .pp-plan-edit__lessons {
+    order: 2;
+  }
+
+  .pp-plan-edit__actions {
+    order: 3;
+    margin-left: auto;
+  }
+}
+
+/* ===== 반별 진도 체크표 ===== */
+.progress-page .progress-matrix__wrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  border-radius: 12px;
+  border: 1px solid var(--border-soft);
+}
+
+.progress-page .progress-matrix {
+  table-layout: fixed;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 13px;
+  width: 100%;
+}
+
+.progress-page .progress-matrix th,
+.progress-page .progress-matrix td {
+  border-bottom: 1px solid var(--border-soft);
+  border-right: 1px solid var(--border-soft);
+  padding: 9px 12px;
+  text-align: center;
+  word-break: keep-all;
+  overflow-wrap: break-word;
+}
+
+.progress-page .progress-matrix th:last-child,
+.progress-page .progress-matrix td:last-child {
+  border-right: none;
+}
+
+/* 학급 열만 고정 너비를 주고, 나머지 진도 항목 열은 폭을 지정하지 않는다 -
+   table-layout: fixed에서는 지정 안 된 열들이 남은 너비를 균등하게 나눠 갖으므로,
+   항목명 길이와 무관하게 모든 진도 항목 열의 너비가 항상 동일해진다. */
+.progress-page .progress-matrix__corner {
+  width: 92px;
+}
+
+.progress-page .progress-matrix__corner,
+.progress-page .progress-matrix thead th {
+  background: var(--bg-card-soft);
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+
+.progress-page .progress-matrix__rowhead {
+  background: var(--bg-card-soft);
+  text-align: left;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.progress-page .progress-matrix__check {
+  width: 30px;
+  height: 30px;
+  margin: 0 auto;
+  border: 1px solid var(--border-soft);
+  background: var(--bg-card);
+  border-radius: 8px;
+  cursor: pointer;
+  color: var(--accent);
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.progress-page .progress-matrix__check--done {
+  background: var(--accent-soft);
+  border-color: var(--accent-soft);
+  color: var(--accent);
+}
+
+/* "진행 중"은 완료와 같은 rose 계열이되, 완료보다 옅고 차분하게(muted/dusty rose) -
+   기존에 --text-secondary(warm gray-brown)를 쓰고 있어 갈색/주황 느낌으로 튀어 보였다.
+   기호(◐)와 상태 판단 로직은 전혀 바꾸지 않고 색상만 조정한다. */
+.progress-page .progress-matrix__check--progress {
+  background: var(--bg-card-soft);
+  border-color: var(--accent-soft);
+  color: var(--accent);
+  opacity: 0.72;
+  font-size: 13px;
+}
+
+.pp-legend {
+  display: flex;
+  gap: 18px;
+  margin: 10px 0 0;
+  font-size: 12.5px;
+  color: var(--text-secondary);
+}
+
+.pp-legend__item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* 범례의 swatch는 실제 체크표 셀(.progress-matrix__check)과 완전히 같은 클래스를 그대로
+   써서 색/모양이 저절로 동일해진다 - 크기만 legend에 맞게 살짝 줄인다.
+   반드시 .progress-page로 스코프해야 한다 - 그렇지 않으면 특이도가
+   ".progress-page .progress-matrix__check"(특이도 2)보다 낮아(특이도 1) 이 크기 지정이
+   무시되고 표 셀과 똑같은 30px 크기로 렌더링된다(실제로 발생했던 문제의 원인). */
+.progress-page .pp-legend__swatch {
+  width: 20px;
+  height: 20px;
+  font-size: 11px;
+  cursor: default;
+  pointer-events: none;
+}
+
+/* ProgressIcon(진행 중 svg)이 일반 텍스트 줄 안에서도(예: "◐ 진행 중: ...") 기준선과
+   자연스럽게 맞도록 살짝 내려준다. 버튼/범례 안에서는 flex 중앙 정렬이 우선 적용되므로
+   이 값의 영향을 받지 않는다. */
+.progress-icon {
+  vertical-align: -2px;
+}
+
+/* ===== 반별 진도 현황 accordion ===== */
+.progress-accordion {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.progress-accordion__item {
+  border: 1px solid var(--border-soft);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.progress-accordion__summary {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  background: var(--bg-card-soft);
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+  text-align: left;
+}
+
+.progress-accordion__summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.progress-accordion__name {
+  flex: 0 0 auto;
+  font-weight: 700;
+  color: var(--text-primary);
+  min-width: 40px;
+}
+
+.progress-accordion__status {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 13px;
+  color: var(--text-secondary);
+  word-break: keep-all;
+  overflow-wrap: break-word;
+}
+
+.progress-accordion__detail,
+.progress-accordion__next {
+  color: var(--text-secondary);
+}
+
+.progress-accordion__remaining {
+  flex: 0 0 auto;
+  font-size: 12.5px;
+  color: var(--accent);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.progress-accordion__chevron {
+  flex: 0 0 auto;
+  color: var(--text-secondary);
+}
+
+.progress-accordion__panel {
+  padding: 14px 16px;
+  border-top: 1px solid var(--border-soft);
+  background: var(--bg-card);
+}
+
+/* ===== 남은 수업 요약 카드 ===== */
+.pp-remaining-range {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-bottom: 16px;
+}
+
+.pp-remaining-range__label {
+  font-weight: 600;
+}
+
+.pp-remaining-range input {
+  border: 1px solid var(--border-soft);
+  background: var(--bg-card);
+  color: var(--text-primary);
+  border-radius: 8px;
+  padding: 6px 9px;
+  font-size: 13px;
+}
+
+/* Desktop: 담당 반들을 비교하기 쉬운 responsive card grid */
+.remaining-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 14px;
+}
+
+.remaining-card {
+  border: 1px solid var(--border-soft);
+  border-radius: 14px;
+  padding: 14px 16px;
+  background: var(--bg-card-soft);
+}
+
+.remaining-card__title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0 0 8px;
+  word-break: keep-all;
+  overflow-wrap: break-word;
+}
+
+.remaining-card__rows {
+  display: flex;
+  flex-direction: column;
+}
+
+.remaining-card__row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 7px 0;
+  font-size: 13px;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.remaining-card__row:last-child {
+  border-bottom: none;
+}
+
+.remaining-card__label {
+  color: var(--text-secondary);
+}
+
+.remaining-card__value {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+/* "남은 실제 수업" 값만 다른 값보다 아주 약간 강조 - KPI처럼 크게 만들지 않고
+   일반 본문보다 조금 큰 수준(약 18px)의 muted rose로만 구분한다. */
+.remaining-card__value--main {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.remaining-card__value--short {
+  color: var(--danger-soft);
+}
+
+.remaining-card__basis-toggle {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  padding: 8px 0 0;
+  margin-top: 4px;
+  font-size: 12px;
+  font-family: inherit;
+  color: var(--accent);
+  cursor: pointer;
+}
+
+.remaining-card__basis-toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.progress-page .progress-basis {
+  margin-top: 10px;
+  padding: 10px 12px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
+  font-size: 13px;
+  max-width: 360px;
+}
+
+.progress-page .progress-basis__row {
+  display: flex;
+  justify-content: space-between;
+  margin: 0 0 4px;
+  word-break: keep-all;
+}
+
+.progress-page .progress-basis__row--total {
+  border-top: 1px solid var(--border-soft);
+  padding-top: 4px;
+  font-weight: 700;
+}
+
+/* ===== compact list (수동 보정 기록 등) ===== */
+.compact-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.compact-list__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.compact-list__row:last-child {
+  border-bottom: none;
+}
+
+.compact-list__title {
+  font-size: 13.5px;
+  color: var(--text-primary);
+  margin: 0 0 2px;
+  word-break: keep-all;
+  overflow-wrap: break-word;
+}
+
+.compact-list__meta {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+.compact-list__actions {
+  display: flex;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+/* ===== 학사일정 notice (확인 필요한 일정) ===== */
+.pp-notice {
+  background: var(--danger-soft-bg);
+  border: 1px solid var(--danger-soft);
+  border-radius: 14px;
+  padding: 14px 16px;
+  margin-bottom: 22px;
+}
+
+.pp-notice .section__title {
+  color: var(--text-primary);
+}
+
+/* ===== 확정된 학사일정 월별 accordion ===== */
+.pp-month-accordion {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.pp-month-accordion__item {
+  border: 1px solid var(--border-soft);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.pp-month-accordion__summary {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  background: var(--bg-card-soft);
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text-primary);
+  text-align: left;
+}
+
+.pp-month-accordion__count {
+  color: var(--text-secondary);
+  font-weight: 400;
+  margin-left: -2px;
+}
+
+.pp-month-accordion__summary span:last-child {
+  margin-left: auto;
+  color: var(--text-secondary);
+}
+
+/* ===== 이 페이지에서 재사용하는 공유 클래스 오버라이드 ===== */
+.progress-page .btn {
+  border: none;
+  background: var(--accent);
+  color: #fff;
+  border-radius: 999px;
+  padding: 9px 18px;
+  font-size: 13.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.progress-page .btn:hover {
+  filter: brightness(0.95);
+}
+
+.progress-page .btn--ghost {
+  background: transparent;
+  color: var(--text-secondary);
+  border: 1px solid var(--border-soft);
+}
+
+.progress-page .btn--ghost:hover {
+  background: var(--bg-card-soft);
+  filter: none;
+}
+
+.progress-page .btn--danger {
+  background: transparent;
+  color: var(--danger-soft);
+  border: 1px solid var(--danger-soft);
+}
+
+.progress-page .btn--danger:hover {
+  background: var(--danger-soft-bg);
+  filter: none;
+}
+
+.progress-page .btn--small {
+  padding: 6px 12px;
+  font-size: 12px;
+}
+
+.progress-page .form {
+  background: var(--bg-card-soft);
+  border: 1px solid var(--border-soft);
+  border-radius: 14px;
+  padding: 16px;
+}
+
+.progress-page .field input,
+.progress-page .field select,
+.progress-page .field textarea {
+  border: 1px solid var(--border-soft);
+  background: var(--bg-card);
+  color: var(--text-primary);
+  border-radius: 10px;
+  padding: 8px 11px;
+}
+
+.progress-page .status {
+  color: var(--text-secondary);
+}
+
+.progress-page .status--error {
+  color: var(--danger-soft);
+}
+
+.progress-page .list__title,
+.progress-page .list__meta {
+  word-break: keep-all;
+  overflow-wrap: break-word;
+}
+
+.progress-page .badge--done {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.progress-page .badge--high {
+  background: var(--danger-soft-bg);
+  color: var(--danger-soft);
+}
+
+.progress-page .badge--personal {
+  background: var(--bg-card-soft);
+  color: var(--text-secondary);
+}
+
+@media (max-width: 900px) {
+  .progress-page {
+    padding: 32px 20px 60px;
+  }
+}
+
+@media (max-width: 640px) {
+  .remaining-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .remaining-card {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 14px;
+    padding: 10px 14px;
+  }
+
+  .remaining-card__title {
+    order: 1;
+    flex: 0 0 auto;
+    min-width: 70px;
+    margin: 0;
+  }
+
+  .remaining-card__rows {
+    order: 2;
+    flex: 1 1 auto;
+    flex-direction: row;
+    gap: 14px;
+  }
+
+  .remaining-card__row {
+    flex: 0 0 auto;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0;
+    padding: 0;
+    border-bottom: none;
+    font-size: 11.5px;
+  }
+
+  .remaining-card__value--main {
+    font-size: 13px;
+  }
+
+  .remaining-card__basis-toggle {
+    order: 3;
+    width: auto;
+    flex: 0 0 auto;
+    padding: 0;
+    margin: 0;
+  }
+
+  .remaining-card .status--error {
+    order: 5;
+    flex-basis: 100%;
+    margin: 0;
+  }
+
+  .remaining-card .progress-basis {
+    order: 6;
+    flex-basis: 100%;
+  }
+}
+
+@media (max-width: 640px) {
+  .progress-accordion__summary {
+    flex-wrap: wrap;
+  }
+
+  .progress-accordion__status {
+    order: 3;
+    flex-basis: 100%;
+  }
+}
+
+/* ===== 학사일정 카드 - 모바일: 본문/액션 상하 배치 =====
+   .list__row는 crud-shared.css의 공유 클래스라 다른 페이지(업무/공지 등)에 영향을 주지
+   않도록 .progress-page로 스코프한다. 좁은 화면에서 4개 액션 버튼(확정/제외/수정/삭제)이
+   flex-shrink:0으로 원래 너비를 그대로 유지하면서 본문(.list__main, min-width:0)을
+   극단적으로 좁게 밀어붙여, overflow-wrap: break-word가 날짜/일정명을 글자 단위로
+   줄바꿈하던 문제를 본문에 항상 한 줄 전체 너비를 확보해 해결한다. */
+@media (max-width: 640px) {
+  .progress-page .list__row {
+    flex-wrap: wrap;
+    align-items: flex-start;
+  }
+
+  .progress-page .list__main {
+    flex: 1 1 100%;
+    width: 100%;
+  }
+
+  .progress-page .list__actions {
+    flex: 1 1 100%;
+    width: 100%;
+    flex-wrap: wrap;
+  }
+}
+
+/* ===== 반별 진도 체크표 - 모바일: 상태 표시 컴팩트화 =====
+   진도 항목 열 개수가 많을수록 table-layout: fixed에서 열 하나의 폭이 좁아져, 고정
+   30px 체크 버튼이 좁은 셀 안에서 한쪽으로 밀려 보이던 문제를 버튼/여백을 셀 폭에 맞게
+   줄여서 해결한다. 체크 여부를 계산하는 로직(isChecked 등)은 건드리지 않는다. */
+@media (max-width: 640px) {
+  .progress-page .progress-matrix {
+    font-size: 12px;
+  }
+
+  .progress-page .progress-matrix th,
+  .progress-page .progress-matrix td {
+    padding: 6px 4px;
+  }
+
+  .progress-page .progress-matrix__corner {
+    width: 56px;
+  }
+
+  .progress-page .progress-matrix__check {
+    width: 24px;
+    height: 24px;
+    border-radius: 6px;
+  }
+
+  .progress-page .progress-matrix__check--progress {
+    font-size: 11px;
+  }
+
+  .progress-page .pp-legend__swatch {
+    width: 16px;
+    height: 16px;
+    font-size: 10px;
+  }
+}

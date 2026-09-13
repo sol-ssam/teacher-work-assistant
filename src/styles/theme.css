@@ -1,0 +1,74 @@
+:root {
+  /* Color: 칠판(사이드바) + 종이(본문) 대비 구조 */
+  --board: #2b3a32; /* 칠판 초록 */
+  --board-line: #435447;
+  --chalk: #e8e4d9; /* 칠판 위 글씨 */
+  --chalk-dim: #a9b3a9;
+
+  --paper: #fffafb; /* 본문 배경 - 기존 warm ivory/beige에서 soft pink-white로 변경 */
+  --paper-line: #e3ddcd; /* 줄 노트 선 */
+  --ink: #232420; /* 본문 글자 */
+  --ink-soft: #5c5a4f;
+
+  --urgent: #a63d2f; /* 🔴 오늘 반드시 확인 */
+  --urgent-bg: #f3e2de;
+  --prep: #c08829; /* 🟡 곧 준비 필요 */
+  --prep-bg: #f5ead2;
+  --calendar: #375d81; /* 📅 일정 */
+  --calendar-bg: #dfe7ee;
+  --class: #3e6b4f; /* 📚 수업 / 진도 */
+  --class-bg: #e2ebe3;
+
+  --font-display: "Paperlogy", "Noto Serif KR", serif;
+  --font-body: "Paperlogy", "Noto Sans KR", sans-serif;
+
+  --sidebar-width: 216px;
+
+  /* ===== Soft Pink Assistant (1단계: Sidebar + Home 전용) =====
+     기존 --board/--paper/--chalk/--ink 등은 다른 여러 페이지(App.css, crud-shared.css,
+     Login.css, AssistantPage.css, PrivacyPage.css 등)에서 이미 널리 쓰이고 있어 그대로
+     둔다. 이번 개편은 Sidebar/Home CSS에서만 아래 새 변수를 쓴다 - 다른 페이지는 전혀
+     영향받지 않는다. */
+  --bg-main: #fffafb; /* soft pink-white - --paper와 동일 톤으로 통일 */
+  --bg-sidebar: #fceff2; /* light blush pink */
+  --bg-sidebar-active: #f7dde4; /* 선택된 메뉴 */
+  --bg-card: #ffffff;
+  --bg-card-soft: #fdf4f6; /* 아주 약한 pink-white */
+  --accent: #c96f86; /* 차분한 rose */
+  --accent-soft: #f3d9e0;
+  --text-primary: #3b2e2e; /* charcoal-brown */
+  --text-secondary: #8a7671; /* warm gray-brown */
+  --border-soft: #f1dfe3;
+  --shadow-soft: 0 4px 16px rgba(201, 111, 134, 0.1);
+  --danger-soft: #d98a86; /* soft coral - 강한 빨강 대신 */
+  --danger-soft-bg: #faeaea;
+  /* Paperlogy 웹폰트 적용(jsDelivr, index.html에서 로드) - --font-display/--font-body
+     맨 앞에 붙여 두 토큰만 바꿨다. 이 변수를 쓰는 곳(진도/일정 등 페이지 컨테이너)은
+     전부 자동으로 Paperlogy를 물려받는다. 로딩 실패/미지원 글리프는 그대로 Noto
+     Serif KR/Noto Sans KR로 폴백된다. */
+  --font-family-base: var(--font-body);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-body);
+  color: var(--ink);
+  background: var(--paper);
+}
+
+button,
+input,
+select,
+textarea {
+  font-family: inherit;
+}

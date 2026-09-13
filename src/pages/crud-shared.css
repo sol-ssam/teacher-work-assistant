@@ -1,0 +1,273 @@
+.page {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 56px 40px 80px;
+}
+
+.page__head {
+  margin-bottom: 28px;
+}
+
+.page__title {
+  font-family: var(--font-display);
+  font-size: 24px;
+  font-weight: 700;
+  margin: 0 0 6px;
+  word-break: keep-all;
+  overflow-wrap: break-word;
+}
+
+.page__desc {
+  font-size: 13.5px;
+  color: var(--ink-soft);
+  margin: 0;
+  word-break: keep-all;
+  overflow-wrap: break-word;
+}
+
+.page__section + .page__section {
+  margin-top: 40px;
+  padding-top: 32px;
+  border-top: 1px solid var(--paper-line);
+}
+
+.section__title {
+  font-family: var(--font-display);
+  font-size: 17px;
+  font-weight: 500;
+  margin: 0 0 16px;
+  word-break: keep-all;
+  overflow-wrap: break-word;
+}
+
+/* 폼 */
+.form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: flex-end;
+  padding: 16px;
+  background: #f4f0e6;
+  border: 1px solid var(--paper-line);
+  border-radius: 4px;
+  margin-bottom: 20px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 12.5px;
+  color: var(--ink-soft);
+}
+
+.field--grow {
+  flex: 1;
+  min-width: 160px;
+}
+
+.field input,
+.field select,
+.field textarea {
+  border: 1px solid var(--paper-line);
+  background: var(--paper);
+  border-radius: 3px;
+  padding: 7px 9px;
+  font-size: 13.5px;
+  color: var(--ink);
+}
+
+.field textarea {
+  resize: vertical;
+  min-height: 44px;
+  font-family: inherit;
+}
+
+.field--checkbox {
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+}
+
+.form__actions {
+  display: flex;
+  gap: 8px;
+}
+
+/* 버튼 */
+.btn {
+  border: 1px solid var(--board);
+  background: var(--board);
+  color: var(--chalk);
+  border-radius: 3px;
+  padding: 8px 14px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.btn:hover {
+  background: #364a3f;
+}
+
+.btn--ghost {
+  background: transparent;
+  color: var(--ink-soft);
+  border-color: var(--paper-line);
+}
+
+.btn--ghost:hover {
+  background: var(--paper-line);
+  color: var(--ink);
+}
+
+.btn--danger {
+  background: transparent;
+  color: var(--urgent);
+  border-color: var(--urgent);
+}
+
+.btn--danger:hover {
+  background: var(--urgent-bg);
+}
+
+.btn--small {
+  padding: 4px 9px;
+  font-size: 12px;
+}
+
+/* 리스트 */
+.list {
+  display: flex;
+  flex-direction: column;
+}
+
+.list__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--paper-line);
+}
+
+.list__row:last-child {
+  border-bottom: none;
+}
+
+.list__main {
+  min-width: 0;
+}
+
+.list__title {
+  font-size: 14px;
+  color: var(--ink);
+  margin: 0 0 3px;
+  word-break: keep-all;
+  overflow-wrap: break-word;
+}
+
+.list__meta {
+  font-size: 12.5px;
+  color: var(--ink-soft);
+  word-break: keep-all;
+  overflow-wrap: break-word;
+}
+
+.list__actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.list--empty {
+  font-size: 13.5px;
+  color: var(--ink-soft);
+  padding: 8px 0;
+}
+
+.badge {
+  display: inline-block;
+  font-size: 11.5px;
+  padding: 2px 7px;
+  border-radius: 10px;
+  margin-right: 6px;
+}
+
+.badge--academic {
+  background: var(--calendar-bg);
+  color: var(--calendar);
+}
+.badge--school {
+  background: var(--class-bg);
+  color: var(--class);
+}
+.badge--meeting {
+  background: var(--prep-bg);
+  color: var(--prep);
+}
+.badge--personal {
+  background: #e8e4d9;
+  color: var(--ink-soft);
+}
+.badge--training {
+  background: var(--class-bg);
+  color: var(--class);
+}
+.badge--other {
+  background: #e8e4d9;
+  color: var(--ink-soft);
+}
+.badge--high {
+  background: var(--urgent-bg);
+  color: var(--urgent);
+}
+.badge--medium {
+  background: var(--prep-bg);
+  color: var(--prep);
+}
+.badge--low {
+  background: #e8e4d9;
+  color: var(--ink-soft);
+}
+.badge--important {
+  background: var(--urgent-bg);
+  color: var(--urgent);
+}
+.badge--done {
+  background: #e2ebe3;
+  color: var(--class);
+}
+
+.list__title--done {
+  text-decoration: line-through;
+  color: var(--ink-soft);
+}
+
+.status {
+  font-size: 13.5px;
+  color: var(--ink-soft);
+  margin: 12px 0;
+  word-break: keep-all;
+  overflow-wrap: break-word;
+}
+
+.status--error {
+  color: var(--urgent);
+}
+
+/* 모바일: 날짜/원문처럼 여러 field가 나열되는 form은 flex-wrap의 줄바꿈 타이밍에 기대지
+   않고, 항상 1열 세로 구조로 확정한다(SettingsPage의 .setting-card__row와 같은 원칙).
+   .form/.field는 여러 페이지(학사일정/문서 분석/일정/업무/시간표)가 공유하므로 이 한
+   곳에서만 바꾼다 - 페이지별 CSS에 중복 추가하지 않는다. */
+@media (max-width: 640px) {
+  .form {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .field,
+  .field--grow {
+    width: 100%;
+    min-width: 0;
+  }
+}
