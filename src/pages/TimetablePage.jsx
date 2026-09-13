@@ -13,13 +13,34 @@ import { formatClassName } from "../utils/progressComparison";
 import { getEffectiveDayTimetable } from "../utils/effectiveTimetable";
 import { buildSwapPayloads, buildMovePayloads } from "../utils/timetableChangeService";
 import { todayDateString, formatDateDisplay, weekdayKoreanOf } from "../utils/date";
+import { useFieldErrors, isBlank } from "../utils/formValidation";
 import Modal from "../components/Modal";
+import FieldError from "../components/FieldError";
 import "./crud-shared.css";
 import "./TimetablePage.css";
 
 const emptyCellForm = { className: "", subject: "" };
 const emptyOverrideForm = { date: "", period: PERIODS[0], className: "", subject: "", memo: "" };
 const emptyHrCellForm = { subject: "", teacher: "" };
+
+function validateCellForm(values) {
+  const errors = {};
+  if (isBlank(values.className)) errors.className = "학급을 입력해 주세요.";
+  return errors;
+}
+
+function validateHrCellForm(values) {
+  const errors = {};
+  if (isBlank(values.subject)) errors.subject = "과목을 입력해 주세요.";
+  return errors;
+}
+
+function validateOverrideForm(values) {
+  const errors = {};
+  if (isBlank(values.date)) errors.date = "날짜를 선택해 주세요.";
+  if (isBlank(values.className)) errors.className = "학급을 입력해 주세요.";
+  return errors;
+}
 
 export default function TimetablePage() {
   const { user } = useAuth();
@@ -31,9 +52,13 @@ export default function TimetablePage() {
 
   const [selectedCell, setSelectedCell] = useState(null); // { dayOfWeek, period }
   const [cellForm, setCellForm] = useState(emptyCellForm);
+  const cellErrors = useFieldErrors();
+  const onCellFormChange = cellErrors.withErrorClearing(setCellForm);
 
   const [overrideForm, setOverrideForm] = useState(emptyOverrideForm);
   const [editingOverrideId, setEditingOverrideId] = useState(null);
+  const overrideErrors = useFieldErrors();
+  const onOverrideFormChange = overrideErrors.withErrorClearing(setOverrideForm);
 
   // 시간표 가져오기(PDF/이미지/엑셀/워드) - 분석 결과는 미리보기 상태로만 두고,
   // 사용자가 "시간표 등록"을 눌러야 실제로 Firestore에 반영된다.
@@ -44,6 +69,8 @@ export default function TimetablePage() {
 
   const [selectedPreviewCell, setSelectedPreviewCell] = useState(null);
   const [previewCellForm, setPreviewCellForm] = useState(emptyCellForm);
+  const previewCellErrors = useFieldErrors();
+  const onPreviewCellFormChange = previewCellErrors.withErrorClearing(setPreviewCellForm);
 
   const [showOverwriteConfirm, setShowOverwriteConfirm] = useState(false);
   const [registering, setRegistering] = useState(false);
@@ -99,6 +126,7 @@ export default function TimetablePage() {
   function openPreviewCell(dayOfWeek, period) {
     const entry = previewCellEntry(dayOfWeek, period);
     setSelectedPreviewCell({ dayOfWeek, period });
+    previewCellErrors.clearAll();
     setPreviewCellForm(
       entry ? { className: entry.className ?? "", subject: entry.subject ?? "" } : emptyCellForm
     );
@@ -110,10 +138,13 @@ export default function TimetablePage() {
     const { dayOfWeek, period } = selectedPreviewCell;
     const existing = previewCellEntry(dayOfWeek, period);
 
-    if (!previewCellForm.className && !previewCellForm.subject) {
+    // 아무것도 입력하지 않고 저장을 누르면 "이 칸은 비워둔다"는 뜻으로 받아들인다 -
+    // 학급만 입력하고 저장하려는 경우와 구분하기 위해, 완전히 빈 경우에만 조용히 닫는다.
+    if (isBlank(previewCellForm.className) && isBlank(previewCellForm.subject)) {
       setSelectedPreviewCell(null);
       return;
     }
+    if (!previewCellErrors.runValidation(validateCellForm(previewCellForm))) return;
 
     setPreviewEntries((prev) => {
       const rest = prev.filter((en) => !(en.dayOfWeek === dayOfWeek && en.period === period));
@@ -136,6 +167,7 @@ export default function TimetablePage() {
     const { dayOfWeek, period } = selectedPreviewCell;
     setPreviewEntries((prev) => prev.filter((en) => !(en.dayOfWeek === dayOfWeek && en.period === period)));
     setSelectedPreviewCell(null);
+    previewCellErrors.clearAll();
   }
 
   function requestRegister() {
@@ -220,6 +252,8 @@ export default function TimetablePage() {
 
   const [hrSelectedCell, setHrSelectedCell] = useState(null);
   const [hrCellForm, setHrCellForm] = useState(emptyHrCellForm);
+  const hrCellErrors = useFieldErrors();
+  const onHrCellFormChange = hrCellErrors.withErrorClearing(setHrCellForm);
 
   const [hrImportFile, setHrImportFile] = useState(null);
   const [hrImportAnalyzing, setHrImportAnalyzing] = useState(false);
@@ -227,6 +261,8 @@ export default function TimetablePage() {
   const [hrPreviewEntries, setHrPreviewEntries] = useState(null);
   const [hrSelectedPreviewCell, setHrSelectedPreviewCell] = useState(null);
   const [hrPreviewCellForm, setHrPreviewCellForm] = useState(emptyHrCellForm);
+  const hrPreviewCellErrors = useFieldErrors();
+  const onHrPreviewCellFormChange = hrPreviewCellErrors.withErrorClearing(setHrPreviewCellForm);
   const [hrShowOverwriteConfirm, setHrShowOverwriteConfirm] = useState(false);
   const [hrRegistering, setHrRegistering] = useState(false);
 
@@ -263,15 +299,16 @@ export default function TimetablePage() {
   function openHrCell(dayOfWeek, period) {
     const entry = hrCellEntry(dayOfWeek, period);
     setHrSelectedCell({ dayOfWeek, period });
+    hrCellErrors.clearAll();
     setHrCellForm(entry ? { subject: entry.subject ?? "", teacher: entry.teacher ?? "" } : emptyHrCellForm);
   }
 
   async function saveHrCell(e) {
     e.preventDefault();
     if (!hrSelectedCell) return;
+    if (!hrCellErrors.runValidation(validateHrCellForm(hrCellForm))) return;
     const { dayOfWeek, period } = hrSelectedCell;
     const entry = hrCellEntry(dayOfWeek, period);
-    if (!hrCellForm.subject) return;
 
     if (entry) {
       await updateDocById("homeroom_timetable", entry.id, { ...hrCellForm });
@@ -289,6 +326,7 @@ export default function TimetablePage() {
     if (entry) await deleteDocById("homeroom_timetable", entry.id);
     setHrSelectedCell(null);
     setHrCellForm(emptyHrCellForm);
+    hrCellErrors.clearAll();
     loadHomeroom();
   }
 
@@ -349,6 +387,7 @@ export default function TimetablePage() {
   function openHrPreviewCell(dayOfWeek, period) {
     const entry = hrPreviewCellEntry(dayOfWeek, period);
     setHrSelectedPreviewCell({ dayOfWeek, period });
+    hrPreviewCellErrors.clearAll();
     setHrPreviewCellForm(
       entry ? { subject: entry.subject ?? "", teacher: entry.teacher ?? "" } : emptyHrCellForm
     );
@@ -360,10 +399,12 @@ export default function TimetablePage() {
     const { dayOfWeek, period } = hrSelectedPreviewCell;
     const existing = hrPreviewCellEntry(dayOfWeek, period);
 
-    if (!hrPreviewCellForm.subject) {
+    // 아무것도 입력하지 않고 저장을 누르면 "이 칸은 비워둔다"는 뜻으로 받아들인다.
+    if (isBlank(hrPreviewCellForm.subject) && isBlank(hrPreviewCellForm.teacher)) {
       setHrSelectedPreviewCell(null);
       return;
     }
+    if (!hrPreviewCellErrors.runValidation(validateHrCellForm(hrPreviewCellForm))) return;
 
     setHrPreviewEntries((prev) => {
       const rest = prev.filter((en) => !(en.dayOfWeek === dayOfWeek && en.period === period));
@@ -386,6 +427,7 @@ export default function TimetablePage() {
     const { dayOfWeek, period } = hrSelectedPreviewCell;
     setHrPreviewEntries((prev) => prev.filter((en) => !(en.dayOfWeek === dayOfWeek && en.period === period)));
     setHrSelectedPreviewCell(null);
+    hrPreviewCellErrors.clearAll();
   }
 
   function requestHrRegister() {
@@ -426,15 +468,16 @@ export default function TimetablePage() {
   function openCell(dayOfWeek, period) {
     const entry = cellEntry(dayOfWeek, period);
     setSelectedCell({ dayOfWeek, period });
+    cellErrors.clearAll();
     setCellForm(entry ? { className: entry.className ?? "", subject: entry.subject ?? "" } : emptyCellForm);
   }
 
   async function saveCell(e) {
     e.preventDefault();
     if (!selectedCell) return;
+    if (!cellErrors.runValidation(validateCellForm(cellForm))) return;
     const { dayOfWeek, period } = selectedCell;
     const entry = cellEntry(dayOfWeek, period);
-    if (!cellForm.className && !cellForm.subject) return;
 
     if (entry) {
       await updateDocById("timetable", entry.id, { ...cellForm });
@@ -452,13 +495,17 @@ export default function TimetablePage() {
     if (entry) await deleteDocById("timetable", entry.id);
     setSelectedCell(null);
     setCellForm(emptyCellForm);
+    cellErrors.clearAll();
     loadAll();
   }
 
   const [editOverrideForm, setEditOverrideForm] = useState(emptyOverrideForm);
+  const editOverrideErrors = useFieldErrors();
+  const onEditOverrideFormChange = editOverrideErrors.withErrorClearing(setEditOverrideForm);
 
   function startEditOverride(o) {
     setEditingOverrideId(o.id);
+    editOverrideErrors.clearAll();
     setEditOverrideForm({
       date: o.date ?? "",
       period: o.period ?? PERIODS[0],
@@ -471,11 +518,12 @@ export default function TimetablePage() {
   function cancelEditOverride() {
     setEditingOverrideId(null);
     setEditOverrideForm(emptyOverrideForm);
+    editOverrideErrors.clearAll();
   }
 
   async function submitOverride(e) {
     e.preventDefault();
-    if (!overrideForm.date || !overrideForm.className) return;
+    if (!overrideErrors.runValidation(validateOverrideForm(overrideForm))) return;
     const payload = { ...overrideForm, period: Number(overrideForm.period) };
     await createDoc("timetable_overrides", user.uid, payload);
     setOverrideForm(emptyOverrideForm);
@@ -484,7 +532,7 @@ export default function TimetablePage() {
 
   async function submitEditOverride(e) {
     e.preventDefault();
-    if (!editOverrideForm.date || !editOverrideForm.className) return;
+    if (!editOverrideErrors.runValidation(validateOverrideForm(editOverrideForm))) return;
     // 기존 update 로직 그대로 - Firestore document ID(editingOverrideId) 유지.
     const payload = { ...editOverrideForm, period: Number(editOverrideForm.period) };
     await updateDocById("timetable_overrides", editingOverrideId, payload);
@@ -840,25 +888,31 @@ export default function TimetablePage() {
             </table>
 
             {selectedCell && (
-              <form className="form" onSubmit={saveCell} style={{ marginTop: 16 }}>
+              <form className="form" onSubmit={saveCell} style={{ marginTop: 16 }} noValidate>
                 <div className="field">
                   <label>{selectedCell.dayOfWeek}요일 · {selectedCell.period}교시</label>
                 </div>
-                <div className="field">
-                  <label>학급</label>
+                <div className={"field" + (cellErrors.errors.className ? " field--invalid" : "")}>
+                  <label htmlFor="tt-cell-className">학급</label>
                   <input
+                    id="tt-cell-className"
+                    ref={cellErrors.registerField("className")}
                     autoFocus
+                    aria-invalid={!!cellErrors.errors.className}
+                    aria-describedby={cellErrors.errors.className ? "tt-cell-className-error" : undefined}
                     placeholder="예: 3-2"
                     value={cellForm.className}
-                    onChange={(e) => setCellForm({ ...cellForm, className: e.target.value })}
+                    onChange={(e) => onCellFormChange({ ...cellForm, className: e.target.value })}
                   />
+                  <FieldError id="tt-cell-className-error" message={cellErrors.errors.className} />
                 </div>
                 <div className="field field--grow">
-                  <label>과목</label>
+                  <label htmlFor="tt-cell-subject">과목</label>
                   <input
+                    id="tt-cell-subject"
                     placeholder="예: 기술·가정"
                     value={cellForm.subject}
-                    onChange={(e) => setCellForm({ ...cellForm, subject: e.target.value })}
+                    onChange={(e) => onCellFormChange({ ...cellForm, subject: e.target.value })}
                   />
                 </div>
                 <div className="form__actions">
@@ -874,6 +928,7 @@ export default function TimetablePage() {
                     onClick={() => {
                       setSelectedCell(null);
                       setCellForm(emptyCellForm);
+                      cellErrors.clearAll();
                     }}
                   >
                     취소
@@ -922,7 +977,11 @@ export default function TimetablePage() {
               </div>
             )}
 
-            {importError && <p className="status status--error">{importError}</p>}
+            {importError && (
+              <p className="status status--error" role="alert">
+                {importError}
+              </p>
+            )}
 
             {previewEntries && (
               <>
@@ -978,30 +1037,36 @@ export default function TimetablePage() {
                 </table>
 
                 {selectedPreviewCell && (
-                  <form className="form" onSubmit={savePreviewCell} style={{ marginTop: 16 }}>
+                  <form className="form" onSubmit={savePreviewCell} style={{ marginTop: 16 }} noValidate>
                     <div className="field">
                       <label>
                         {selectedPreviewCell.dayOfWeek}요일 · {selectedPreviewCell.period}교시
                       </label>
                     </div>
-                    <div className="field">
-                      <label>학급</label>
+                    <div className={"field" + (previewCellErrors.errors.className ? " field--invalid" : "")}>
+                      <label htmlFor="tt-preview-className">학급</label>
                       <input
+                        id="tt-preview-className"
+                        ref={previewCellErrors.registerField("className")}
                         autoFocus
+                        aria-invalid={!!previewCellErrors.errors.className}
+                        aria-describedby={previewCellErrors.errors.className ? "tt-preview-className-error" : undefined}
                         placeholder="예: 3-2"
                         value={previewCellForm.className}
                         onChange={(e) =>
-                          setPreviewCellForm({ ...previewCellForm, className: e.target.value })
+                          onPreviewCellFormChange({ ...previewCellForm, className: e.target.value })
                         }
                       />
+                      <FieldError id="tt-preview-className-error" message={previewCellErrors.errors.className} />
                     </div>
                     <div className="field field--grow">
-                      <label>과목</label>
+                      <label htmlFor="tt-preview-subject">과목</label>
                       <input
+                        id="tt-preview-subject"
                         placeholder="예: 기술·가정"
                         value={previewCellForm.subject}
                         onChange={(e) =>
-                          setPreviewCellForm({ ...previewCellForm, subject: e.target.value })
+                          onPreviewCellFormChange({ ...previewCellForm, subject: e.target.value })
                         }
                       />
                     </div>
@@ -1017,7 +1082,10 @@ export default function TimetablePage() {
                       <button
                         type="button"
                         className="btn btn--ghost"
-                        onClick={() => setSelectedPreviewCell(null)}
+                        onClick={() => {
+                          setSelectedPreviewCell(null);
+                          previewCellErrors.clearAll();
+                        }}
                       >
                         취소
                       </button>
@@ -1044,21 +1112,26 @@ export default function TimetablePage() {
           <section className="page__section">
             <h2 className="section__title">일시적 변경</h2>
 
-            <form className="form" onSubmit={submitOverride}>
-              <div className="field">
-                <label>날짜</label>
+            <form className="form" onSubmit={submitOverride} noValidate>
+              <div className={"field" + (overrideErrors.errors.date ? " field--invalid" : "")}>
+                <label htmlFor="tt-override-date">날짜</label>
                 <input
+                  id="tt-override-date"
+                  ref={overrideErrors.registerField("date")}
                   type="date"
+                  aria-invalid={!!overrideErrors.errors.date}
+                  aria-describedby={overrideErrors.errors.date ? "tt-override-date-error" : undefined}
                   value={overrideForm.date}
-                  onChange={(e) => setOverrideForm({ ...overrideForm, date: e.target.value })}
-                  required
+                  onChange={(e) => onOverrideFormChange({ ...overrideForm, date: e.target.value })}
                 />
+                <FieldError id="tt-override-date-error" message={overrideErrors.errors.date} />
               </div>
               <div className="field">
-                <label>교시</label>
+                <label htmlFor="tt-override-period">교시</label>
                 <select
+                  id="tt-override-period"
                   value={overrideForm.period}
-                  onChange={(e) => setOverrideForm({ ...overrideForm, period: e.target.value })}
+                  onChange={(e) => onOverrideFormChange({ ...overrideForm, period: e.target.value })}
                 >
                   {PERIODS.map((p) => (
                     <option key={p} value={p}>
@@ -1067,29 +1140,35 @@ export default function TimetablePage() {
                   ))}
                 </select>
               </div>
-              <div className="field">
-                <label>학급</label>
+              <div className={"field" + (overrideErrors.errors.className ? " field--invalid" : "")}>
+                <label htmlFor="tt-override-className">학급</label>
                 <input
+                  id="tt-override-className"
+                  ref={overrideErrors.registerField("className")}
+                  aria-invalid={!!overrideErrors.errors.className}
+                  aria-describedby={overrideErrors.errors.className ? "tt-override-className-error" : undefined}
                   placeholder="예: 3-2"
                   value={overrideForm.className}
-                  onChange={(e) => setOverrideForm({ ...overrideForm, className: e.target.value })}
-                  required
+                  onChange={(e) => onOverrideFormChange({ ...overrideForm, className: e.target.value })}
                 />
+                <FieldError id="tt-override-className-error" message={overrideErrors.errors.className} />
               </div>
               <div className="field">
-                <label>변경 과목(선택)</label>
+                <label htmlFor="tt-override-subject">변경 과목(선택)</label>
                 <input
+                  id="tt-override-subject"
                   placeholder="비워두면 기존 과목 유지"
                   value={overrideForm.subject}
-                  onChange={(e) => setOverrideForm({ ...overrideForm, subject: e.target.value })}
+                  onChange={(e) => onOverrideFormChange({ ...overrideForm, subject: e.target.value })}
                 />
               </div>
               <div className="field field--grow">
-                <label>메모</label>
+                <label htmlFor="tt-override-memo">메모</label>
                 <input
+                  id="tt-override-memo"
                   placeholder="예: 체육대회로 5교시 휴강"
                   value={overrideForm.memo}
-                  onChange={(e) => setOverrideForm({ ...overrideForm, memo: e.target.value })}
+                  onChange={(e) => onOverrideFormChange({ ...overrideForm, memo: e.target.value })}
                 />
               </div>
               <div className="form__actions">
@@ -1104,21 +1183,26 @@ export default function TimetablePage() {
               {overrides.map((o) =>
                 editingOverrideId === o.id ? (
                   // 이 항목이 원래 있던 바로 그 행 자리에서 수정 form으로 전환된다.
-                  <form className="form" key={o.id} onSubmit={submitEditOverride}>
-                    <div className="field">
-                      <label>날짜</label>
+                  <form className="form" key={o.id} onSubmit={submitEditOverride} noValidate>
+                    <div className={"field" + (editOverrideErrors.errors.date ? " field--invalid" : "")}>
+                      <label htmlFor="tt-edit-override-date">날짜</label>
                       <input
+                        id="tt-edit-override-date"
+                        ref={editOverrideErrors.registerField("date")}
                         type="date"
+                        aria-invalid={!!editOverrideErrors.errors.date}
+                        aria-describedby={editOverrideErrors.errors.date ? "tt-edit-override-date-error" : undefined}
                         value={editOverrideForm.date}
-                        onChange={(e) => setEditOverrideForm({ ...editOverrideForm, date: e.target.value })}
-                        required
+                        onChange={(e) => onEditOverrideFormChange({ ...editOverrideForm, date: e.target.value })}
                       />
+                      <FieldError id="tt-edit-override-date-error" message={editOverrideErrors.errors.date} />
                     </div>
                     <div className="field">
-                      <label>교시</label>
+                      <label htmlFor="tt-edit-override-period">교시</label>
                       <select
+                        id="tt-edit-override-period"
                         value={editOverrideForm.period}
-                        onChange={(e) => setEditOverrideForm({ ...editOverrideForm, period: e.target.value })}
+                        onChange={(e) => onEditOverrideFormChange({ ...editOverrideForm, period: e.target.value })}
                       >
                         {PERIODS.map((p) => (
                           <option key={p} value={p}>
@@ -1127,26 +1211,37 @@ export default function TimetablePage() {
                         ))}
                       </select>
                     </div>
-                    <div className="field">
-                      <label>학급</label>
+                    <div className={"field" + (editOverrideErrors.errors.className ? " field--invalid" : "")}>
+                      <label htmlFor="tt-edit-override-className">학급</label>
                       <input
+                        id="tt-edit-override-className"
+                        ref={editOverrideErrors.registerField("className")}
+                        aria-invalid={!!editOverrideErrors.errors.className}
+                        aria-describedby={
+                          editOverrideErrors.errors.className ? "tt-edit-override-className-error" : undefined
+                        }
                         value={editOverrideForm.className}
-                        onChange={(e) => setEditOverrideForm({ ...editOverrideForm, className: e.target.value })}
-                        required
+                        onChange={(e) => onEditOverrideFormChange({ ...editOverrideForm, className: e.target.value })}
+                      />
+                      <FieldError
+                        id="tt-edit-override-className-error"
+                        message={editOverrideErrors.errors.className}
                       />
                     </div>
                     <div className="field">
-                      <label>변경 과목(선택)</label>
+                      <label htmlFor="tt-edit-override-subject">변경 과목(선택)</label>
                       <input
+                        id="tt-edit-override-subject"
                         value={editOverrideForm.subject}
-                        onChange={(e) => setEditOverrideForm({ ...editOverrideForm, subject: e.target.value })}
+                        onChange={(e) => onEditOverrideFormChange({ ...editOverrideForm, subject: e.target.value })}
                       />
                     </div>
                     <div className="field field--grow">
-                      <label>메모</label>
+                      <label htmlFor="tt-edit-override-memo">메모</label>
                       <input
+                        id="tt-edit-override-memo"
                         value={editOverrideForm.memo}
-                        onChange={(e) => setEditOverrideForm({ ...editOverrideForm, memo: e.target.value })}
+                        onChange={(e) => onEditOverrideFormChange({ ...editOverrideForm, memo: e.target.value })}
                       />
                     </div>
                     <div className="form__actions">
@@ -1214,7 +1309,11 @@ export default function TimetablePage() {
             </p>
             <MiniTimetable day={quickDayTimetable} />
 
-            {quickChangeError && <p className="status status--error">{quickChangeError}</p>}
+            {quickChangeError && (
+              <p className="status status--error" role="alert">
+                {quickChangeError}
+              </p>
+            )}
 
             {quickChangeType === "swap" && (
               <div className="form">
@@ -1302,7 +1401,7 @@ export default function TimetablePage() {
                   </button>
                 </div>
                 {moveConflict && (
-                  <div className="status status--error" style={{ width: "100%" }}>
+                  <div className="status status--error" style={{ width: "100%" }} role="alert">
                     <p style={{ margin: "0 0 8px" }}>
                       {effectiveMoveToDate}({moveTargetDayTimetable.actualDayOfWeek}) {moveToPeriod}교시에는 이미{" "}
                       {formatClassName(moveConflict.className)} 수업이 있습니다.
@@ -1493,27 +1592,33 @@ export default function TimetablePage() {
                 </table>
 
                 {hrSelectedCell && (
-                  <form className="form" onSubmit={saveHrCell} style={{ marginTop: 16 }}>
+                  <form className="form" onSubmit={saveHrCell} style={{ marginTop: 16 }} noValidate>
                     <div className="field">
                       <label>
                         {hrSelectedCell.dayOfWeek}요일 · {hrSelectedCell.period}교시
                       </label>
                     </div>
-                    <div className="field field--grow">
-                      <label>과목</label>
+                    <div className={"field field--grow" + (hrCellErrors.errors.subject ? " field--invalid" : "")}>
+                      <label htmlFor="tt-hr-subject">과목</label>
                       <input
+                        id="tt-hr-subject"
+                        ref={hrCellErrors.registerField("subject")}
                         autoFocus
+                        aria-invalid={!!hrCellErrors.errors.subject}
+                        aria-describedby={hrCellErrors.errors.subject ? "tt-hr-subject-error" : undefined}
                         placeholder="예: 국어"
                         value={hrCellForm.subject}
-                        onChange={(e) => setHrCellForm({ ...hrCellForm, subject: e.target.value })}
+                        onChange={(e) => onHrCellFormChange({ ...hrCellForm, subject: e.target.value })}
                       />
+                      <FieldError id="tt-hr-subject-error" message={hrCellErrors.errors.subject} />
                     </div>
                     <div className="field">
-                      <label>담당 선생님(선택)</label>
+                      <label htmlFor="tt-hr-teacher">담당 선생님(선택)</label>
                       <input
+                        id="tt-hr-teacher"
                         placeholder="예: 홍길동"
                         value={hrCellForm.teacher}
-                        onChange={(e) => setHrCellForm({ ...hrCellForm, teacher: e.target.value })}
+                        onChange={(e) => onHrCellFormChange({ ...hrCellForm, teacher: e.target.value })}
                       />
                     </div>
                     <div className="form__actions">
@@ -1531,6 +1636,7 @@ export default function TimetablePage() {
                         onClick={() => {
                           setHrSelectedCell(null);
                           setHrCellForm(emptyHrCellForm);
+                          hrCellErrors.clearAll();
                         }}
                       >
                         취소
@@ -1582,7 +1688,11 @@ export default function TimetablePage() {
                   </div>
                 )}
 
-                {hrImportError && <p className="status status--error">{hrImportError}</p>}
+                {hrImportError && (
+                  <p className="status status--error" role="alert">
+                    {hrImportError}
+                  </p>
+                )}
 
                 {hrPreviewEntries && (
                   <>
@@ -1640,30 +1750,45 @@ export default function TimetablePage() {
                     </table>
 
                     {hrSelectedPreviewCell && (
-                      <form className="form" onSubmit={saveHrPreviewCell} style={{ marginTop: 16 }}>
+                      <form className="form" onSubmit={saveHrPreviewCell} style={{ marginTop: 16 }} noValidate>
                         <div className="field">
                           <label>
                             {hrSelectedPreviewCell.dayOfWeek}요일 · {hrSelectedPreviewCell.period}교시
                           </label>
                         </div>
-                        <div className="field field--grow">
-                          <label>과목</label>
+                        <div
+                          className={
+                            "field field--grow" + (hrPreviewCellErrors.errors.subject ? " field--invalid" : "")
+                          }
+                        >
+                          <label htmlFor="tt-hr-preview-subject">과목</label>
                           <input
+                            id="tt-hr-preview-subject"
+                            ref={hrPreviewCellErrors.registerField("subject")}
                             autoFocus
+                            aria-invalid={!!hrPreviewCellErrors.errors.subject}
+                            aria-describedby={
+                              hrPreviewCellErrors.errors.subject ? "tt-hr-preview-subject-error" : undefined
+                            }
                             placeholder="예: 국어"
                             value={hrPreviewCellForm.subject}
                             onChange={(e) =>
-                              setHrPreviewCellForm({ ...hrPreviewCellForm, subject: e.target.value })
+                              onHrPreviewCellFormChange({ ...hrPreviewCellForm, subject: e.target.value })
                             }
+                          />
+                          <FieldError
+                            id="tt-hr-preview-subject-error"
+                            message={hrPreviewCellErrors.errors.subject}
                           />
                         </div>
                         <div className="field">
-                          <label>담당 선생님(선택)</label>
+                          <label htmlFor="tt-hr-preview-teacher">담당 선생님(선택)</label>
                           <input
+                            id="tt-hr-preview-teacher"
                             placeholder="예: 홍길동"
                             value={hrPreviewCellForm.teacher}
                             onChange={(e) =>
-                              setHrPreviewCellForm({ ...hrPreviewCellForm, teacher: e.target.value })
+                              onHrPreviewCellFormChange({ ...hrPreviewCellForm, teacher: e.target.value })
                             }
                           />
                         </div>
@@ -1682,7 +1807,10 @@ export default function TimetablePage() {
                           <button
                             type="button"
                             className="btn btn--ghost"
-                            onClick={() => setHrSelectedPreviewCell(null)}
+                            onClick={() => {
+                              setHrSelectedPreviewCell(null);
+                              hrPreviewCellErrors.clearAll();
+                            }}
                           >
                             취소
                           </button>

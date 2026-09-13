@@ -93,6 +93,30 @@
   font-family: inherit;
 }
 
+/* 오류 표시 - 색상만으로 구분하지 않도록 항상 테두리 + 아이콘 + 문구를 함께 쓴다. */
+.field--invalid input,
+.field--invalid select,
+.field--invalid textarea {
+  border-color: var(--urgent);
+}
+
+.field--invalid input:focus-visible,
+.field--invalid select:focus-visible,
+.field--invalid textarea:focus-visible {
+  border-color: var(--urgent);
+  box-shadow: 0 0 0 3px var(--urgent-bg);
+}
+
+.field__error {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  margin: 2px 0 0;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--urgent);
+}
+
 .field--checkbox {
   flex-direction: row;
   align-items: center;

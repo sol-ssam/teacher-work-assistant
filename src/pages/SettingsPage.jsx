@@ -6,11 +6,39 @@ import { listDocsByOwner } from "../firebase/crud";
 import { getSettings, updateBriefingTime, updateHomeroomSettings } from "../firebase/settingsService";
 import { resetWorkData, resetAllUserData } from "../firebase/resetData";
 import { deleteCalendarEvent } from "../calendar/calendarApi";
+import { useFieldErrors, isBlank } from "../utils/formValidation";
 import Modal from "../components/Modal";
+import FieldError from "../components/FieldError";
 import "./crud-shared.css";
 import "./SettingsPage.css";
 
 const CONFIRM_WORD = "초기화";
+
+function isPositiveInteger(value) {
+  return /^[0-9]+$/.test(String(value).trim()) && Number(value) > 0;
+}
+
+function validateBriefingForm(briefingTime) {
+  const errors = {};
+  if (isBlank(briefingTime)) errors.briefingTime = "브리핑 시간을 입력해 주세요.";
+  return errors;
+}
+
+function validateHomeroomForm({ isHomeroomTeacher, homeroomGrade, homeroomClassNum }) {
+  const errors = {};
+  if (!isHomeroomTeacher) return errors;
+  if (isBlank(homeroomGrade)) {
+    errors.homeroomGrade = "학년을 입력해 주세요.";
+  } else if (!isPositiveInteger(homeroomGrade)) {
+    errors.homeroomGrade = "학년은 숫자로 입력해 주세요.";
+  }
+  if (isBlank(homeroomClassNum)) {
+    errors.homeroomClassNum = "반을 입력해 주세요.";
+  } else if (!isPositiveInteger(homeroomClassNum)) {
+    errors.homeroomClassNum = "반은 숫자로 입력해 주세요.";
+  }
+  return errors;
+}
 
 export default function SettingsPage() {
   const { user } = useAuth();
@@ -30,6 +58,7 @@ export default function SettingsPage() {
   const [briefingTime, setBriefingTime] = useState("08:20");
   const [briefingSaving, setBriefingSaving] = useState(false);
   const [briefingSaved, setBriefingSaved] = useState(false);
+  const briefingErrors = useFieldErrors();
 
   // 담임 학급 설정. 담임을 해제해도 학년/반 입력값과 기존 담임 학급 시간표 데이터는
   // 지우지 않는다 - 나중에 다시 담임으로 설정했을 때 그대로 이어서 쓸 수 있게 하기 위해서다.
@@ -38,6 +67,7 @@ export default function SettingsPage() {
   const [homeroomClassNum, setHomeroomClassNum] = useState("");
   const [homeroomSaving, setHomeroomSaving] = useState(false);
   const [homeroomSaved, setHomeroomSaved] = useState(false);
+  const homeroomErrors = useFieldErrors();
 
   useEffect(() => {
     if (!user) return;
@@ -54,6 +84,7 @@ export default function SettingsPage() {
 
   async function saveBriefingTime() {
     if (!user) return;
+    if (!briefingErrors.runValidation(validateBriefingForm(briefingTime))) return;
     setBriefingSaving(true);
     setBriefingSaved(false);
     try {
@@ -66,6 +97,8 @@ export default function SettingsPage() {
 
   async function saveHomeroomSettings() {
     if (!user) return;
+    if (!homeroomErrors.runValidation(validateHomeroomForm({ isHomeroomTeacher, homeroomGrade, homeroomClassNum })))
+      return;
     setHomeroomSaving(true);
     setHomeroomSaved(false);
     try {
@@ -170,7 +203,11 @@ export default function SettingsPage() {
                 일정을 캘린더에 추가하려는 순간 자동으로 연결 창이 뜰 수도 있어요.
               </p>
             )}
-            {error && <p className="status status--error">연결 오류: {error}</p>}
+            {error && (
+              <p className="status status--error" role="alert">
+                연결 오류: {error}
+              </p>
+            )}
             <div className="setting-card__actions">
               {connected ? (
                 <button className="btn btn--ghost btn--small" onClick={disconnect}>
@@ -194,16 +231,22 @@ export default function SettingsPage() {
           앱을 열었을 때 오늘의 브리핑을 보여주는 기준 시간을 설정해요.
         </p>
         <div className="setting-card__row">
-          <div className="setting-card__field">
-            <label>브리핑 기준 시간</label>
+          <div className={"setting-card__field" + (briefingErrors.errors.briefingTime ? " field--invalid" : "")}>
+            <label htmlFor="settings-briefing-time">브리핑 기준 시간</label>
             <input
+              id="settings-briefing-time"
+              ref={briefingErrors.registerField("briefingTime")}
               type="time"
+              aria-invalid={!!briefingErrors.errors.briefingTime}
+              aria-describedby={briefingErrors.errors.briefingTime ? "settings-briefing-time-error" : undefined}
               value={briefingTime}
               onChange={(e) => {
                 setBriefingTime(e.target.value);
                 setBriefingSaved(false);
+                briefingErrors.clearFieldError("briefingTime");
               }}
             />
+            <FieldError id="settings-briefing-time-error" message={briefingErrors.errors.briefingTime} />
           </div>
           <div className="setting-card__actions">
             <button className="btn btn--small" onClick={saveBriefingTime} disabled={briefingSaving}>
@@ -230,6 +273,7 @@ export default function SettingsPage() {
               onChange={() => {
                 setIsHomeroomTeacher(false);
                 setHomeroomSaved(false);
+                homeroomErrors.clearAll();
               }}
             />
             담임 아님
@@ -248,35 +292,63 @@ export default function SettingsPage() {
         </div>
 
         <div className="setting-card__row">
-          <div className={"setting-card__field" + (!isHomeroomTeacher ? " setting-card__field--disabled" : "")}>
-            <label>학년</label>
+          <div
+            className={
+              "setting-card__field" +
+              (!isHomeroomTeacher ? " setting-card__field--disabled" : "") +
+              (homeroomErrors.errors.homeroomGrade ? " field--invalid" : "")
+            }
+          >
+            <label htmlFor="settings-homeroom-grade">학년</label>
             <span className="setting-card__suffix-input">
               <input
+                id="settings-homeroom-grade"
+                ref={homeroomErrors.registerField("homeroomGrade")}
+                aria-invalid={!!homeroomErrors.errors.homeroomGrade}
+                aria-describedby={
+                  homeroomErrors.errors.homeroomGrade ? "settings-homeroom-grade-error" : undefined
+                }
                 value={homeroomGrade}
                 onChange={(e) => {
                   setHomeroomGrade(e.target.value);
                   setHomeroomSaved(false);
+                  homeroomErrors.clearFieldError("homeroomGrade");
                 }}
                 placeholder="예: 3"
                 disabled={!isHomeroomTeacher}
               />
               <span className="setting-card__suffix">학년</span>
             </span>
+            <FieldError id="settings-homeroom-grade-error" message={homeroomErrors.errors.homeroomGrade} />
           </div>
-          <div className={"setting-card__field" + (!isHomeroomTeacher ? " setting-card__field--disabled" : "")}>
-            <label>반</label>
+          <div
+            className={
+              "setting-card__field" +
+              (!isHomeroomTeacher ? " setting-card__field--disabled" : "") +
+              (homeroomErrors.errors.homeroomClassNum ? " field--invalid" : "")
+            }
+          >
+            <label htmlFor="settings-homeroom-classnum">반</label>
             <span className="setting-card__suffix-input">
               <input
+                id="settings-homeroom-classnum"
+                ref={homeroomErrors.registerField("homeroomClassNum")}
+                aria-invalid={!!homeroomErrors.errors.homeroomClassNum}
+                aria-describedby={
+                  homeroomErrors.errors.homeroomClassNum ? "settings-homeroom-classnum-error" : undefined
+                }
                 value={homeroomClassNum}
                 onChange={(e) => {
                   setHomeroomClassNum(e.target.value);
                   setHomeroomSaved(false);
+                  homeroomErrors.clearFieldError("homeroomClassNum");
                 }}
                 placeholder="예: 6"
                 disabled={!isHomeroomTeacher}
               />
               <span className="setting-card__suffix">반</span>
             </span>
+            <FieldError id="settings-homeroom-classnum-error" message={homeroomErrors.errors.homeroomClassNum} />
           </div>
           <div className="setting-card__actions">
             <button className="btn btn--small" onClick={saveHomeroomSettings} disabled={homeroomSaving}>

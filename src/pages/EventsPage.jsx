@@ -11,7 +11,9 @@ import {
 } from "../utils/calendarEligibility";
 import { EVENT_TYPES, ATTENDANCE_BASED_EVENT_TYPES, eventTypeDisplayLabel } from "../utils/constants";
 import { formatDateDisplay, weekdayKoreanOf, todayDateString } from "../utils/date";
+import { useFieldErrors, isBlank, isTimeBefore } from "../utils/formValidation";
 import Modal from "../components/Modal";
+import FieldError from "../components/FieldError";
 import "./crud-shared.css";
 import "./EventsPage.css";
 
@@ -28,50 +30,94 @@ const emptyForm = {
   addToCalendar: false,
 };
 
+// 일정 저장 전 확인하는 조건: 제목/날짜 필수, 종료 시간은 시작 시간 이후, "기타" 구분은
+// 직접 입력 필수. Firestore에 실제로 어떤 값이 저장되는지는 그대로 두고, 저장을 시도하기
+// 전에 이 조건을 만족하는지만 화면에서 먼저 확인한다.
+function validateEventForm(values) {
+  const errors = {};
+  if (isBlank(values.title)) errors.title = "제목을 입력해 주세요.";
+  if (isBlank(values.date)) errors.date = "날짜를 선택해 주세요.";
+  if (isTimeBefore(values.startTime, values.endTime)) {
+    errors.endTime = "종료 시간은 시작 시간 이후로 설정해 주세요.";
+  }
+  if (values.type === "other" && isBlank(values.customType)) {
+    errors.customType = "구분을 직접 입력해 주세요.";
+  }
+  return errors;
+}
+
 // 등록 form과 인라인 수정 form이 완전히 동일한 필드 UI를 공유한다(중복 방지). 각 form은
-// 자기 자신의 state(신규 등록용 form, 또는 그 항목만의 editForm)를 따로 갖고 이 컴포넌트에
-// 넘겨줄 뿐이다.
-function EventFormFields({ values, onChange, calendarConfigured, connected, connecting }) {
+// 자기 자신의 state(신규 등록용 form, 또는 그 항목만의 editForm)와 오류 state를 따로 갖고
+// 이 컴포넌트에 넘겨줄 뿐이다.
+function EventFormFields({
+  values,
+  onChange,
+  calendarConfigured,
+  connected,
+  connecting,
+  errors = {},
+  registerField,
+  idPrefix,
+}) {
   const isAttendanceBasedType = ATTENDANCE_BASED_EVENT_TYPES.includes(values.type);
   const eligibleNow = isCalendarEligible({
     type: values.type,
     attending: isAttendanceBasedType ? parseAttendingValue(values.attending) : null,
   });
+  const id = (name) => `${idPrefix}-${name}`;
 
   return (
     <>
-      <div className="field field--grow">
-        <label>제목</label>
-        <input value={values.title} onChange={(e) => onChange({ ...values, title: e.target.value })} required />
-      </div>
-      <div className="field">
-        <label>날짜</label>
+      <div className={"field field--grow" + (errors.title ? " field--invalid" : "")}>
+        <label htmlFor={id("title")}>제목</label>
         <input
+          id={id("title")}
+          ref={registerField("title")}
+          aria-invalid={!!errors.title}
+          aria-describedby={errors.title ? id("title-error") : undefined}
+          value={values.title}
+          onChange={(e) => onChange({ ...values, title: e.target.value })}
+        />
+        <FieldError id={id("title-error")} message={errors.title} />
+      </div>
+      <div className={"field" + (errors.date ? " field--invalid" : "")}>
+        <label htmlFor={id("date")}>날짜</label>
+        <input
+          id={id("date")}
+          ref={registerField("date")}
           type="date"
+          aria-invalid={!!errors.date}
+          aria-describedby={errors.date ? id("date-error") : undefined}
           value={values.date}
           onChange={(e) => onChange({ ...values, date: e.target.value })}
-          required
         />
+        <FieldError id={id("date-error")} message={errors.date} />
       </div>
       <div className="field">
-        <label>시작</label>
+        <label htmlFor={id("startTime")}>시작</label>
         <input
+          id={id("startTime")}
           type="time"
           value={values.startTime}
           onChange={(e) => onChange({ ...values, startTime: e.target.value })}
         />
       </div>
-      <div className="field">
-        <label>종료</label>
+      <div className={"field" + (errors.endTime ? " field--invalid" : "")}>
+        <label htmlFor={id("endTime")}>종료</label>
         <input
+          id={id("endTime")}
+          ref={registerField("endTime")}
           type="time"
+          aria-invalid={!!errors.endTime}
+          aria-describedby={errors.endTime ? id("endTime-error") : undefined}
           value={values.endTime}
           onChange={(e) => onChange({ ...values, endTime: e.target.value })}
         />
+        <FieldError id={id("endTime-error")} message={errors.endTime} />
       </div>
       <div className="field">
-        <label>구분</label>
-        <select value={values.type} onChange={(e) => onChange({ ...values, type: e.target.value })}>
+        <label htmlFor={id("type")}>구분</label>
+        <select id={id("type")} value={values.type} onChange={(e) => onChange({ ...values, type: e.target.value })}>
           {EVENT_TYPES.map((t) => (
             <option key={t.value} value={t.value}>
               {t.label}
@@ -81,8 +127,12 @@ function EventFormFields({ values, onChange, calendarConfigured, connected, conn
       </div>
       {isAttendanceBasedType && (
         <div className="field">
-          <label>참석 여부</label>
-          <select value={values.attending} onChange={(e) => onChange({ ...values, attending: e.target.value })}>
+          <label htmlFor={id("attending")}>참석 여부</label>
+          <select
+            id={id("attending")}
+            value={values.attending}
+            onChange={(e) => onChange({ ...values, attending: e.target.value })}
+          >
             {ATTENDING_OPTIONS.map((o) => (
               <option key={o.value} value={o.value}>
                 {o.label}
@@ -92,13 +142,18 @@ function EventFormFields({ values, onChange, calendarConfigured, connected, conn
         </div>
       )}
       {values.type === "other" && (
-        <div className="field">
-          <label>직접 입력</label>
+        <div className={"field" + (errors.customType ? " field--invalid" : "")}>
+          <label htmlFor={id("customType")}>직접 입력</label>
           <input
+            id={id("customType")}
+            ref={registerField("customType")}
+            aria-invalid={!!errors.customType}
+            aria-describedby={errors.customType ? id("customType-error") : undefined}
             value={values.customType}
             onChange={(e) => onChange({ ...values, customType: e.target.value })}
             placeholder="예: 웨딩 준비"
           />
+          <FieldError id={id("customType-error")} message={errors.customType} />
         </div>
       )}
       <div className="field">
@@ -149,12 +204,16 @@ export default function EventsPage() {
   const [createForm, setCreateForm] = useState(emptyForm);
   const [creating, setCreating] = useState(false);
   const [createCalendarWarning, setCreateCalendarWarning] = useState(null);
+  const createErrors = useFieldErrors();
+  const onCreateChange = createErrors.withErrorClearing(setCreateForm);
 
   // 인라인 수정 전용 state - 항목이 원래 있던 자리에서 그대로 수정한다.
   const [editingId, setEditingId] = useState(null);
   const [editForm, setEditForm] = useState(emptyForm);
   const [editSaving, setEditSaving] = useState(false);
   const [editCalendarWarning, setEditCalendarWarning] = useState(null);
+  const editErrors = useFieldErrors();
+  const onEditChange = editErrors.withErrorClearing(setEditForm);
 
   const [deleteTarget, setDeleteTarget] = useState(null); // Google Calendar와 동기화된 일정을 지울 때 확인용
   const [deleting, setDeleting] = useState(false);
@@ -193,12 +252,14 @@ export default function EventsPage() {
     setShowCreateForm(false);
     setCreateForm(emptyForm);
     setCreateCalendarWarning(null);
+    createErrors.clearAll();
   }
 
   function startEdit(ev) {
     setShowCreateForm(false); // 한 번에 하나의 form만 - 신규 등록 form이 열려 있으면 닫는다.
     setEditingId(ev.id);
     setEditCalendarWarning(null);
+    editErrors.clearAll();
     setEditForm({
       title: ev.title ?? "",
       date: ev.date ?? "",
@@ -217,6 +278,7 @@ export default function EventsPage() {
     setEditingId(null);
     setEditForm(emptyForm);
     setEditCalendarWarning(null);
+    editErrors.clearAll();
   }
 
   // 신규 등록/기존 수정이 공유하는 저장 로직. existingEvent가 있으면 그 document를
@@ -298,11 +360,13 @@ export default function EventsPage() {
 
   function submitCreate(e) {
     e.preventDefault();
+    if (!createErrors.runValidation(validateEventForm(createForm))) return;
     saveEvent(createForm, null, { setSaving: setCreating, setWarning: setCreateCalendarWarning, onDone: closeCreateForm });
   }
 
   function submitEdit(e) {
     e.preventDefault();
+    if (!editErrors.runValidation(validateEventForm(editForm))) return;
     const existing = events.find((ev) => ev.id === editingId);
     saveEvent(editForm, existing, { setSaving: setEditSaving, setWarning: setEditCalendarWarning, onDone: cancelEdit });
   }
@@ -390,13 +454,16 @@ export default function EventsPage() {
       {!loading && !error && (
         <>
           {showCreateForm && (
-            <form className="form ep-form" onSubmit={submitCreate}>
+            <form className="form ep-form" onSubmit={submitCreate} noValidate>
               <EventFormFields
                 values={createForm}
-                onChange={setCreateForm}
+                onChange={onCreateChange}
                 calendarConfigured={calendarConfigured}
                 connected={connected}
                 connecting={connecting}
+                errors={createErrors.errors}
+                registerField={createErrors.registerField}
+                idPrefix="event-create"
               />
               {!calendarConfigured && (
                 <p className="ep-form__helper">
@@ -425,13 +492,16 @@ export default function EventsPage() {
                     editingId === ev.id ? (
                       // 이 일정이 원래 있던 바로 그 자리에서 수정 form으로 전환된다 -
                       // 페이지 상단으로 이동하지 않는다.
-                      <form className="form ep-form ep-form--inline" key={ev.id} onSubmit={submitEdit}>
+                      <form className="form ep-form ep-form--inline" key={ev.id} onSubmit={submitEdit} noValidate>
                         <EventFormFields
                           values={editForm}
-                          onChange={setEditForm}
+                          onChange={onEditChange}
                           calendarConfigured={calendarConfigured}
                           connected={connected}
                           connecting={connecting}
+                          errors={editErrors.errors}
+                          registerField={editErrors.registerField}
+                          idPrefix="event-edit"
                         />
                         {editCalendarWarning && <p className="status status--error">{editCalendarWarning}</p>}
                         <div className="form__actions">

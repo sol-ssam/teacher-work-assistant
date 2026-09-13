@@ -3,31 +3,57 @@ import { useAuth } from "../contexts/AuthContext";
 import { createDoc, updateDocById, deleteDocById, listDocsByOwner } from "../firebase/crud";
 import { TASK_PRIORITIES, TASK_PRIORITY_LABEL } from "../utils/constants";
 import { formatDateDisplay, todayDateString } from "../utils/date";
+import { useFieldErrors, isBlank } from "../utils/formValidation";
+import FieldError from "../components/FieldError";
 import "./crud-shared.css";
 import "./TasksPage.css";
 
 const emptyForm = { title: "", dueDate: "", priority: "medium", memo: "" };
 
+function validateTaskForm(values) {
+  const errors = {};
+  if (isBlank(values.title)) errors.title = "업무명을 입력해 주세요.";
+  if (isBlank(values.dueDate)) errors.dueDate = "마감일을 선택해 주세요.";
+  return errors;
+}
+
 // 등록 form과 인라인 수정 form이 완전히 동일한 필드 UI를 공유한다.
-function TaskFormFields({ values, onChange }) {
+function TaskFormFields({ values, onChange, errors = {}, registerField, idPrefix }) {
+  const id = (name) => `${idPrefix}-${name}`;
   return (
     <>
-      <div className="field field--grow">
-        <label>업무명</label>
-        <input value={values.title} onChange={(e) => onChange({ ...values, title: e.target.value })} required />
-      </div>
-      <div className="field">
-        <label>마감일</label>
+      <div className={"field field--grow" + (errors.title ? " field--invalid" : "")}>
+        <label htmlFor={id("title")}>업무명</label>
         <input
+          id={id("title")}
+          ref={registerField("title")}
+          aria-invalid={!!errors.title}
+          aria-describedby={errors.title ? id("title-error") : undefined}
+          value={values.title}
+          onChange={(e) => onChange({ ...values, title: e.target.value })}
+        />
+        <FieldError id={id("title-error")} message={errors.title} />
+      </div>
+      <div className={"field" + (errors.dueDate ? " field--invalid" : "")}>
+        <label htmlFor={id("dueDate")}>마감일</label>
+        <input
+          id={id("dueDate")}
+          ref={registerField("dueDate")}
           type="date"
+          aria-invalid={!!errors.dueDate}
+          aria-describedby={errors.dueDate ? id("dueDate-error") : undefined}
           value={values.dueDate}
           onChange={(e) => onChange({ ...values, dueDate: e.target.value })}
-          required
         />
+        <FieldError id={id("dueDate-error")} message={errors.dueDate} />
       </div>
       <div className="field">
-        <label>중요도</label>
-        <select value={values.priority} onChange={(e) => onChange({ ...values, priority: e.target.value })}>
+        <label htmlFor={id("priority")}>중요도</label>
+        <select
+          id={id("priority")}
+          value={values.priority}
+          onChange={(e) => onChange({ ...values, priority: e.target.value })}
+        >
           {TASK_PRIORITIES.map((p) => (
             <option key={p.value} value={p.value}>
               {p.label}
@@ -36,8 +62,8 @@ function TaskFormFields({ values, onChange }) {
         </select>
       </div>
       <div className="field field--grow">
-        <label>메모</label>
-        <input value={values.memo} onChange={(e) => onChange({ ...values, memo: e.target.value })} />
+        <label htmlFor={id("memo")}>메모</label>
+        <input id={id("memo")} value={values.memo} onChange={(e) => onChange({ ...values, memo: e.target.value })} />
       </div>
     </>
   );
@@ -52,9 +78,13 @@ export default function TasksPage() {
 
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [createForm, setCreateForm] = useState(emptyForm);
+  const createErrors = useFieldErrors();
+  const onCreateChange = createErrors.withErrorClearing(setCreateForm);
 
   const [editingId, setEditingId] = useState(null);
   const [editForm, setEditForm] = useState(emptyForm);
+  const editErrors = useFieldErrors();
+  const onEditChange = editErrors.withErrorClearing(setEditForm);
 
   async function load() {
     if (!user) return;
@@ -83,11 +113,13 @@ export default function TasksPage() {
   function closeCreateForm() {
     setShowCreateForm(false);
     setCreateForm(emptyForm);
+    createErrors.clearAll();
   }
 
   function startEdit(t) {
     setShowCreateForm(false); // 한 번에 하나의 form만 - 신규 등록 form이 열려 있으면 닫는다.
     setEditingId(t.id);
+    editErrors.clearAll();
     setEditForm({
       title: t.title ?? "",
       dueDate: t.dueDate ?? "",
@@ -99,11 +131,12 @@ export default function TasksPage() {
   function cancelEdit() {
     setEditingId(null);
     setEditForm(emptyForm);
+    editErrors.clearAll();
   }
 
   async function submitCreate(e) {
     e.preventDefault();
-    if (!createForm.title || !createForm.dueDate) return;
+    if (!createErrors.runValidation(validateTaskForm(createForm))) return;
     const now = new Date().toISOString();
     await createDoc("tasks", user.uid, {
       ...createForm,
@@ -118,7 +151,7 @@ export default function TasksPage() {
 
   async function submitEdit(e) {
     e.preventDefault();
-    if (!editForm.title || !editForm.dueDate) return;
+    if (!editErrors.runValidation(validateTaskForm(editForm))) return;
     // 기존 update 로직 그대로 - Firestore document ID(editingId) 유지, 새 document 생성 안 함.
     await updateDocById("tasks", editingId, { ...editForm, updatedAt: new Date().toISOString() });
     cancelEdit();
@@ -198,8 +231,14 @@ export default function TasksPage() {
       {!loading && !error && (
         <>
           {showCreateForm && (
-            <form className="form tp-form" onSubmit={submitCreate}>
-              <TaskFormFields values={createForm} onChange={setCreateForm} />
+            <form className="form tp-form" onSubmit={submitCreate} noValidate>
+              <TaskFormFields
+                values={createForm}
+                onChange={onCreateChange}
+                errors={createErrors.errors}
+                registerField={createErrors.registerField}
+                idPrefix="task-create"
+              />
               <div className="form__actions">
                 <button type="submit" className="btn">
                   추가
@@ -224,8 +263,14 @@ export default function TasksPage() {
             {visible.map((t) =>
               editingId === t.id ? (
                 // 이 업무가 원래 있던 바로 그 자리에서 수정 form으로 전환된다.
-                <form className="form tp-form tp-form--inline" key={t.id} onSubmit={submitEdit}>
-                  <TaskFormFields values={editForm} onChange={setEditForm} />
+                <form className="form tp-form tp-form--inline" key={t.id} onSubmit={submitEdit} noValidate>
+                  <TaskFormFields
+                    values={editForm}
+                    onChange={onEditChange}
+                    errors={editErrors.errors}
+                    registerField={editErrors.registerField}
+                    idPrefix="task-edit"
+                  />
                   <div className="form__actions">
                     <button type="submit" className="btn">
                       저장

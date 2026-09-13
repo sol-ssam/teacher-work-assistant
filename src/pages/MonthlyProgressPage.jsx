@@ -21,6 +21,8 @@ import {
 } from "../utils/progressComparison";
 import { calculateRemainingLessons } from "../utils/remainingLessons";
 import { computeCompletedIdsBefore, historyEntriesEqual } from "../utils/progressStatusUpdate";
+import { useFieldErrors, isBlank, isValidNumberList } from "../utils/formValidation";
+import FieldError from "../components/FieldError";
 import "./crud-shared.css";
 import "./MonthlyProgressPage.css";
 
@@ -63,6 +65,29 @@ const emptyScheduleForm = {
 };
 
 const emptyAdjustmentForm = { date: "", className: "", delta: "", reason: "" };
+
+function validateScheduleForm(values) {
+  const errors = {};
+  if (isBlank(values.date)) errors.date = "날짜를 선택해 주세요.";
+  if (isBlank(values.originalText)) errors.originalText = "원문을 입력해 주세요.";
+  if (!isValidNumberList(values.noClassGrades)) errors.noClassGrades = "쉼표로 구분된 숫자만 입력해 주세요.";
+  if (!isValidNumberList(values.regularPeriods)) errors.regularPeriods = "쉼표로 구분된 숫자만 입력해 주세요.";
+  if (!isValidNumberList(values.affectedGrades)) errors.affectedGrades = "쉼표로 구분된 숫자만 입력해 주세요.";
+  if (!isValidNumberList(values.affectedPeriods)) errors.affectedPeriods = "쉼표로 구분된 숫자만 입력해 주세요.";
+  return errors;
+}
+
+function validateAdjustmentForm(values) {
+  const errors = {};
+  if (isBlank(values.date)) errors.date = "날짜를 선택해 주세요.";
+  if (isBlank(values.className)) errors.className = "학급을 선택해 주세요.";
+  if (isBlank(values.delta)) {
+    errors.delta = "변화량을 입력해 주세요.";
+  } else if (Number.isNaN(Number(values.delta))) {
+    errors.delta = "올바른 숫자를 입력해 주세요.";
+  }
+  return errors;
+}
 
 // "진행 중" 상태를 나타내던 "◐" 문자가 폰트/브라우저에 따라 원 안에서 좌우 중심이
 // 어긋나 보이는 문제가 있어, 정확히 중앙 정렬되는 반원 아이콘을 직접 그려서 대체한다.
@@ -648,9 +673,12 @@ export default function MonthlyProgressPage() {
   // ===== 학사일정 해석(school_day_schedules) 수동 관리 =====
   const [scheduleForm, setScheduleForm] = useState(emptyScheduleForm);
   const [editingScheduleId, setEditingScheduleId] = useState(null);
+  const scheduleErrors = useFieldErrors();
+  const onScheduleFormChange = scheduleErrors.withErrorClearing(setScheduleForm);
 
   function startEditSchedule(s) {
     setEditingScheduleId(s.id);
+    scheduleErrors.clearAll();
     setScheduleForm({
       date: s.date ?? "",
       originalText: s.originalText ?? "",
@@ -668,11 +696,13 @@ export default function MonthlyProgressPage() {
   function resetScheduleForm() {
     setEditingScheduleId(null);
     setScheduleForm(emptyScheduleForm);
+    scheduleErrors.clearAll();
   }
 
   async function submitSchedule(e) {
     e.preventDefault();
-    if (!user || !scheduleForm.date || !scheduleForm.originalText) return;
+    if (!user) return;
+    if (!scheduleErrors.runValidation(validateScheduleForm(scheduleForm))) return;
     const now = new Date().toISOString();
     const payload = omitUndefined({
       date: scheduleForm.date,
@@ -848,10 +878,15 @@ export default function MonthlyProgressPage() {
   const [adjustmentForm, setAdjustmentForm] = useState(emptyAdjustmentForm);
   const [editingAdjustmentId, setEditingAdjustmentId] = useState(null);
   const [editAdjustmentForm, setEditAdjustmentForm] = useState(emptyAdjustmentForm);
+  const adjustmentErrors = useFieldErrors();
+  const onAdjustmentFormChange = adjustmentErrors.withErrorClearing(setAdjustmentForm);
+  const editAdjustmentErrors = useFieldErrors();
+  const onEditAdjustmentFormChange = editAdjustmentErrors.withErrorClearing(setEditAdjustmentForm);
 
   function startEditAdjustment(a) {
     setShowAdjustmentForm(false); // 한 번에 하나의 form만 - 신규 등록 form이 열려 있으면 닫는다.
     setEditingAdjustmentId(a.id);
+    editAdjustmentErrors.clearAll();
     setEditAdjustmentForm({
       date: a.date ?? "",
       className: a.className ?? "",
@@ -863,6 +898,7 @@ export default function MonthlyProgressPage() {
   function cancelEditAdjustment() {
     setEditingAdjustmentId(null);
     setEditAdjustmentForm(emptyAdjustmentForm);
+    editAdjustmentErrors.clearAll();
   }
 
   function buildAdjustmentPayload(values) {
@@ -875,18 +911,22 @@ export default function MonthlyProgressPage() {
     };
   }
 
+  // 저장에 성공했을 때만 true를 반환한다 - 호출부(JSX)가 유효성 검사 실패 시에는 폼을
+  // 닫지 않고 오류 메시지를 계속 보여줄 수 있도록 하기 위해서다.
   async function submitAdjustment(e) {
     e.preventDefault();
-    if (!user || !adjustmentForm.date || !adjustmentForm.className || adjustmentForm.delta === "") return;
+    if (!user) return false;
+    if (!adjustmentErrors.runValidation(validateAdjustmentForm(adjustmentForm))) return false;
     const payload = buildAdjustmentPayload(adjustmentForm);
     await createDoc("lesson_adjustments", user.uid, { ...payload, source: "manual", createdAt: payload.updatedAt });
     setAdjustmentForm(emptyAdjustmentForm);
     reloadAdjustments();
+    return true;
   }
 
   async function submitEditAdjustment(e) {
     e.preventDefault();
-    if (!editAdjustmentForm.date || !editAdjustmentForm.className || editAdjustmentForm.delta === "") return;
+    if (!editAdjustmentErrors.runValidation(validateAdjustmentForm(editAdjustmentForm))) return;
     // 기존 update 로직 그대로 - Firestore document ID(editingAdjustmentId) 유지.
     await updateDocById("lesson_adjustments", editingAdjustmentId, buildAdjustmentPayload(editAdjustmentForm));
     cancelEditAdjustment();
@@ -954,31 +994,43 @@ export default function MonthlyProgressPage() {
   // 학사일정 하나를 등록/수정하는 폼. "직접 입력"(새로 추가)과, 기존 항목을 그 자리에서
   // 바로 고치는 인라인 편집(확인 필요/확정된 일정 목록 둘 다) 양쪽에서 그대로 재사용한다.
   function renderScheduleForm() {
+    const suffix = editingScheduleId ?? "new";
+    const id = (name) => `sch-${name}-${suffix}`;
+    const errors = scheduleErrors.errors;
     return (
-      <form className="form" onSubmit={submitSchedule}>
-        <div className="field">
-          <label>날짜</label>
+      <form className="form" onSubmit={submitSchedule} noValidate>
+        <div className={"field" + (errors.date ? " field--invalid" : "")}>
+          <label htmlFor={id("date")}>날짜</label>
           <input
+            id={id("date")}
+            ref={scheduleErrors.registerField("date")}
             type="date"
+            aria-invalid={!!errors.date}
+            aria-describedby={errors.date ? id("date-error") : undefined}
             value={scheduleForm.date}
-            onChange={(e) => setScheduleForm({ ...scheduleForm, date: e.target.value })}
-            required
+            onChange={(e) => onScheduleFormChange({ ...scheduleForm, date: e.target.value })}
           />
+          <FieldError id={id("date-error")} message={errors.date} />
         </div>
-        <div className="field field--grow">
-          <label>원문</label>
+        <div className={"field field--grow" + (errors.originalText ? " field--invalid" : "")}>
+          <label htmlFor={id("originalText")}>원문</label>
           <input
+            id={id("originalText")}
+            ref={scheduleErrors.registerField("originalText")}
+            aria-invalid={!!errors.originalText}
+            aria-describedby={errors.originalText ? id("originalText-error") : undefined}
             placeholder="예: 2,3학년 중간고사"
             value={scheduleForm.originalText}
-            onChange={(e) => setScheduleForm({ ...scheduleForm, originalText: e.target.value })}
-            required
+            onChange={(e) => onScheduleFormChange({ ...scheduleForm, originalText: e.target.value })}
           />
+          <FieldError id={id("originalText-error")} message={errors.originalText} />
         </div>
         <div className="field">
-          <label>상태</label>
+          <label htmlFor={id("status")}>상태</label>
           <select
+            id={id("status")}
             value={scheduleForm.status}
-            onChange={(e) => setScheduleForm({ ...scheduleForm, status: e.target.value })}
+            onChange={(e) => onScheduleFormChange({ ...scheduleForm, status: e.target.value })}
           >
             {STATUS_OPTIONS.map((s) => (
               <option key={s.value} value={s.value}>
@@ -990,25 +1042,31 @@ export default function MonthlyProgressPage() {
         <div className="field field--checkbox">
           <input
             type="checkbox"
-            id={`no-regular-${editingScheduleId ?? "new"}`}
+            id={`no-regular-${suffix}`}
             checked={scheduleForm.noRegularClasses}
-            onChange={(e) => setScheduleForm({ ...scheduleForm, noRegularClasses: e.target.checked })}
+            onChange={(e) => onScheduleFormChange({ ...scheduleForm, noRegularClasses: e.target.checked })}
           />
-          <label htmlFor={`no-regular-${editingScheduleId ?? "new"}`}>전교 완전 휴업</label>
+          <label htmlFor={`no-regular-${suffix}`}>전교 완전 휴업</label>
         </div>
-        <div className="field">
-          <label>수업 없는 학년(쉼표)</label>
+        <div className={"field" + (errors.noClassGrades ? " field--invalid" : "")}>
+          <label htmlFor={id("noClassGrades")}>수업 없는 학년(쉼표)</label>
           <input
+            id={id("noClassGrades")}
+            ref={scheduleErrors.registerField("noClassGrades")}
+            aria-invalid={!!errors.noClassGrades}
+            aria-describedby={errors.noClassGrades ? id("noClassGrades-error") : undefined}
             placeholder="예: 2,3"
             value={scheduleForm.noClassGrades}
-            onChange={(e) => setScheduleForm({ ...scheduleForm, noClassGrades: e.target.value })}
+            onChange={(e) => onScheduleFormChange({ ...scheduleForm, noClassGrades: e.target.value })}
           />
+          <FieldError id={id("noClassGrades-error")} message={errors.noClassGrades} />
         </div>
         <div className="field">
-          <label>다른 요일 시간표 운영</label>
+          <label htmlFor={id("scheduleDayOverride")}>다른 요일 시간표 운영</label>
           <select
+            id={id("scheduleDayOverride")}
             value={scheduleForm.scheduleDayOverride}
-            onChange={(e) => setScheduleForm({ ...scheduleForm, scheduleDayOverride: e.target.value })}
+            onChange={(e) => onScheduleFormChange({ ...scheduleForm, scheduleDayOverride: e.target.value })}
           >
             <option value="">해당 없음</option>
             {WEEKDAYS.map((d) => (
@@ -1018,33 +1076,52 @@ export default function MonthlyProgressPage() {
             ))}
           </select>
         </div>
-        <div className="field">
-          <label>정규수업 인정 교시(쉼표)</label>
+        <div className={"field" + (errors.regularPeriods ? " field--invalid" : "")}>
+          <label htmlFor={id("regularPeriods")}>정규수업 인정 교시(쉼표)</label>
           <input
+            id={id("regularPeriods")}
+            ref={scheduleErrors.registerField("regularPeriods")}
+            aria-invalid={!!errors.regularPeriods}
+            aria-describedby={errors.regularPeriods ? id("regularPeriods-error") : undefined}
             placeholder="예: 1,2"
             value={scheduleForm.regularPeriods}
-            onChange={(e) => setScheduleForm({ ...scheduleForm, regularPeriods: e.target.value })}
+            onChange={(e) => onScheduleFormChange({ ...scheduleForm, regularPeriods: e.target.value })}
           />
+          <FieldError id={id("regularPeriods-error")} message={errors.regularPeriods} />
         </div>
-        <div className="field">
-          <label>영향 받는 학년(쉼표, 선택)</label>
+        <div className={"field" + (errors.affectedGrades ? " field--invalid" : "")}>
+          <label htmlFor={id("affectedGrades")}>영향 받는 학년(쉼표, 선택)</label>
           <input
+            id={id("affectedGrades")}
+            ref={scheduleErrors.registerField("affectedGrades")}
+            aria-invalid={!!errors.affectedGrades}
+            aria-describedby={errors.affectedGrades ? id("affectedGrades-error") : undefined}
             placeholder="예: 3"
             value={scheduleForm.affectedGrades}
-            onChange={(e) => setScheduleForm({ ...scheduleForm, affectedGrades: e.target.value })}
+            onChange={(e) => onScheduleFormChange({ ...scheduleForm, affectedGrades: e.target.value })}
           />
+          <FieldError id={id("affectedGrades-error")} message={errors.affectedGrades} />
         </div>
-        <div className="field">
-          <label>영향 받는 교시(쉼표, 선택)</label>
+        <div className={"field" + (errors.affectedPeriods ? " field--invalid" : "")}>
+          <label htmlFor={id("affectedPeriods")}>영향 받는 교시(쉼표, 선택)</label>
           <input
+            id={id("affectedPeriods")}
+            ref={scheduleErrors.registerField("affectedPeriods")}
+            aria-invalid={!!errors.affectedPeriods}
+            aria-describedby={errors.affectedPeriods ? id("affectedPeriods-error") : undefined}
             placeholder="예: 3,4"
             value={scheduleForm.affectedPeriods}
-            onChange={(e) => setScheduleForm({ ...scheduleForm, affectedPeriods: e.target.value })}
+            onChange={(e) => onScheduleFormChange({ ...scheduleForm, affectedPeriods: e.target.value })}
           />
+          <FieldError id={id("affectedPeriods-error")} message={errors.affectedPeriods} />
         </div>
         <div className="field field--grow">
-          <label>메모</label>
-          <input value={scheduleForm.memo} onChange={(e) => setScheduleForm({ ...scheduleForm, memo: e.target.value })} />
+          <label htmlFor={id("memo")}>메모</label>
+          <input
+            id={id("memo")}
+            value={scheduleForm.memo}
+            onChange={(e) => onScheduleFormChange({ ...scheduleForm, memo: e.target.value })}
+          />
         </div>
         <div className="form__actions">
           <button type="submit" className="btn">
@@ -1735,6 +1812,7 @@ export default function MonthlyProgressPage() {
                   className="btn-text"
                   onClick={() => {
                     cancelEditAdjustment();
+                    adjustmentErrors.clearAll();
                     setShowAdjustmentForm(true);
                   }}
                 >
@@ -1745,22 +1823,36 @@ export default function MonthlyProgressPage() {
             <p className="section__helper">학사일정에 없던 갑작스러운 수업 증감을 직접 기록해요. 시간표 자체는 바뀌지 않습니다.</p>
 
             {showAdjustmentForm && (
-              <form className="form" onSubmit={(e) => { submitAdjustment(e); setShowAdjustmentForm(false); }}>
-                <div className="field">
-                  <label>날짜</label>
+              <form
+                className="form"
+                onSubmit={async (e) => {
+                  const saved = await submitAdjustment(e);
+                  if (saved) setShowAdjustmentForm(false);
+                }}
+                noValidate
+              >
+                <div className={"field" + (adjustmentErrors.errors.date ? " field--invalid" : "")}>
+                  <label htmlFor="adj-date">날짜</label>
                   <input
+                    id="adj-date"
+                    ref={adjustmentErrors.registerField("date")}
                     type="date"
+                    aria-invalid={!!adjustmentErrors.errors.date}
+                    aria-describedby={adjustmentErrors.errors.date ? "adj-date-error" : undefined}
                     value={adjustmentForm.date}
-                    onChange={(e) => setAdjustmentForm({ ...adjustmentForm, date: e.target.value })}
-                    required
+                    onChange={(e) => onAdjustmentFormChange({ ...adjustmentForm, date: e.target.value })}
                   />
+                  <FieldError id="adj-date-error" message={adjustmentErrors.errors.date} />
                 </div>
-                <div className="field">
-                  <label>학급</label>
+                <div className={"field" + (adjustmentErrors.errors.className ? " field--invalid" : "")}>
+                  <label htmlFor="adj-className">학급</label>
                   <select
+                    id="adj-className"
+                    ref={adjustmentErrors.registerField("className")}
+                    aria-invalid={!!adjustmentErrors.errors.className}
+                    aria-describedby={adjustmentErrors.errors.className ? "adj-className-error" : undefined}
                     value={adjustmentForm.className}
-                    onChange={(e) => setAdjustmentForm({ ...adjustmentForm, className: e.target.value })}
-                    required
+                    onChange={(e) => onAdjustmentFormChange({ ...adjustmentForm, className: e.target.value })}
                   >
                     <option value="">선택</option>
                     {allOwnedClasses.map((c) => (
@@ -1769,23 +1861,29 @@ export default function MonthlyProgressPage() {
                       </option>
                     ))}
                   </select>
+                  <FieldError id="adj-className-error" message={adjustmentErrors.errors.className} />
                 </div>
-                <div className="field">
-                  <label>변화량</label>
+                <div className={"field" + (adjustmentErrors.errors.delta ? " field--invalid" : "")}>
+                  <label htmlFor="adj-delta">변화량</label>
                   <input
+                    id="adj-delta"
+                    ref={adjustmentErrors.registerField("delta")}
                     type="number"
+                    aria-invalid={!!adjustmentErrors.errors.delta}
+                    aria-describedby={adjustmentErrors.errors.delta ? "adj-delta-error" : undefined}
                     placeholder="예: -1 또는 1"
                     value={adjustmentForm.delta}
-                    onChange={(e) => setAdjustmentForm({ ...adjustmentForm, delta: e.target.value })}
-                    required
+                    onChange={(e) => onAdjustmentFormChange({ ...adjustmentForm, delta: e.target.value })}
                   />
+                  <FieldError id="adj-delta-error" message={adjustmentErrors.errors.delta} />
                 </div>
                 <div className="field field--grow">
-                  <label>이유</label>
+                  <label htmlFor="adj-reason">이유</label>
                   <input
+                    id="adj-reason"
                     placeholder="예: 학교행사"
                     value={adjustmentForm.reason}
-                    onChange={(e) => setAdjustmentForm({ ...adjustmentForm, reason: e.target.value })}
+                    onChange={(e) => onAdjustmentFormChange({ ...adjustmentForm, reason: e.target.value })}
                   />
                 </div>
                 <div className="form__actions">
@@ -1797,6 +1895,7 @@ export default function MonthlyProgressPage() {
                     className="btn btn--ghost"
                     onClick={() => {
                       setAdjustmentForm(emptyAdjustmentForm);
+                      adjustmentErrors.clearAll();
                       setShowAdjustmentForm(false);
                     }}
                   >
@@ -1811,22 +1910,38 @@ export default function MonthlyProgressPage() {
               {adjustments.map((a) =>
                 editingAdjustmentId === a.id ? (
                   // 이 보정 기록이 원래 있던 바로 그 행 자리에서 수정 form으로 전환된다.
-                  <form className="form compact-list__edit-form" key={a.id} onSubmit={submitEditAdjustment}>
-                    <div className="field">
-                      <label>날짜</label>
+                  <form
+                    className="form compact-list__edit-form"
+                    key={a.id}
+                    onSubmit={submitEditAdjustment}
+                    noValidate
+                  >
+                    <div className={"field" + (editAdjustmentErrors.errors.date ? " field--invalid" : "")}>
+                      <label htmlFor="adj-edit-date">날짜</label>
                       <input
+                        id="adj-edit-date"
+                        ref={editAdjustmentErrors.registerField("date")}
                         type="date"
+                        aria-invalid={!!editAdjustmentErrors.errors.date}
+                        aria-describedby={editAdjustmentErrors.errors.date ? "adj-edit-date-error" : undefined}
                         value={editAdjustmentForm.date}
-                        onChange={(e) => setEditAdjustmentForm({ ...editAdjustmentForm, date: e.target.value })}
-                        required
+                        onChange={(e) => onEditAdjustmentFormChange({ ...editAdjustmentForm, date: e.target.value })}
                       />
+                      <FieldError id="adj-edit-date-error" message={editAdjustmentErrors.errors.date} />
                     </div>
-                    <div className="field">
-                      <label>학급</label>
+                    <div className={"field" + (editAdjustmentErrors.errors.className ? " field--invalid" : "")}>
+                      <label htmlFor="adj-edit-className">학급</label>
                       <select
+                        id="adj-edit-className"
+                        ref={editAdjustmentErrors.registerField("className")}
+                        aria-invalid={!!editAdjustmentErrors.errors.className}
+                        aria-describedby={
+                          editAdjustmentErrors.errors.className ? "adj-edit-className-error" : undefined
+                        }
                         value={editAdjustmentForm.className}
-                        onChange={(e) => setEditAdjustmentForm({ ...editAdjustmentForm, className: e.target.value })}
-                        required
+                        onChange={(e) =>
+                          onEditAdjustmentFormChange({ ...editAdjustmentForm, className: e.target.value })
+                        }
                       >
                         <option value="">선택</option>
                         {allOwnedClasses.map((c) => (
@@ -1835,21 +1950,29 @@ export default function MonthlyProgressPage() {
                           </option>
                         ))}
                       </select>
+                      <FieldError id="adj-edit-className-error" message={editAdjustmentErrors.errors.className} />
                     </div>
-                    <div className="field">
-                      <label>변화량</label>
+                    <div className={"field" + (editAdjustmentErrors.errors.delta ? " field--invalid" : "")}>
+                      <label htmlFor="adj-edit-delta">변화량</label>
                       <input
+                        id="adj-edit-delta"
+                        ref={editAdjustmentErrors.registerField("delta")}
                         type="number"
+                        aria-invalid={!!editAdjustmentErrors.errors.delta}
+                        aria-describedby={editAdjustmentErrors.errors.delta ? "adj-edit-delta-error" : undefined}
                         value={editAdjustmentForm.delta}
-                        onChange={(e) => setEditAdjustmentForm({ ...editAdjustmentForm, delta: e.target.value })}
-                        required
+                        onChange={(e) => onEditAdjustmentFormChange({ ...editAdjustmentForm, delta: e.target.value })}
                       />
+                      <FieldError id="adj-edit-delta-error" message={editAdjustmentErrors.errors.delta} />
                     </div>
                     <div className="field field--grow">
-                      <label>이유</label>
+                      <label htmlFor="adj-edit-reason">이유</label>
                       <input
+                        id="adj-edit-reason"
                         value={editAdjustmentForm.reason}
-                        onChange={(e) => setEditAdjustmentForm({ ...editAdjustmentForm, reason: e.target.value })}
+                        onChange={(e) =>
+                          onEditAdjustmentFormChange({ ...editAdjustmentForm, reason: e.target.value })
+                        }
                       />
                     </div>
                     <div className="form__actions">

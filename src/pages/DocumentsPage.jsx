@@ -21,6 +21,8 @@ import {
 } from "../utils/conflictDetection";
 import { findTimeConflicts } from "../utils/timeConflictDetection";
 import { EVENT_TYPES } from "../utils/constants";
+import { isBlank, isTimeBefore } from "../utils/formValidation";
+import FieldError from "../components/FieldError";
 import "../pages/crud-shared.css";
 import "./DocumentsPage.css";
 
@@ -45,6 +47,30 @@ function formatFileSize(bytes) {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+function validateUploadForm(form, file) {
+  const errors = {};
+  if (isBlank(form.title)) errors.title = "제목을 입력해 주세요.";
+  if (!file) errors.file = "분석할 문서를 선택해 주세요.";
+  if (!isBlank(form.periodStart) && !isBlank(form.periodEnd) && form.periodStart > form.periodEnd) {
+    errors.periodEnd = "기간 끝은 기간 시작 이후로 설정해 주세요.";
+  }
+  return errors;
+}
+
+function validateExtractedItem(item) {
+  const errors = {};
+  if (isBlank(item.title)) errors.title = "제목을 입력해 주세요.";
+  if (isBlank(item.date)) errors.date = "날짜를 선택해 주세요.";
+  if (item.kind === "event" && isTimeBefore(item.startTime, item.endTime)) {
+    errors.endTime = "종료 시간은 시작 시간 이후로 설정해 주세요.";
+  }
+  if (item.kind === "timetable_change") {
+    if (isBlank(item.period)) errors.period = "교시를 입력해 주세요.";
+    if (isBlank(item.className)) errors.className = "학급을 입력해 주세요.";
+  }
+  return errors;
+}
+
 export default function DocumentsPage() {
   const { user } = useAuth();
   const { configured: calendarConfigured, connect, getValidAccessToken } = useGoogleCalendar();
@@ -61,6 +87,10 @@ export default function DocumentsPage() {
 
   const [edits, setEdits] = useState({});
   const [armed, setArmed] = useState({});
+  const [uploadErrors, setUploadErrors] = useState({});
+  const [itemErrors, setItemErrors] = useState({}); // { [`${docId}:${itemId}`]: { field: message } }
+  const titleInputRef = useRef(null);
+  const periodEndInputRef = useRef(null);
 
   async function load() {
     if (!user) return;
@@ -93,7 +123,14 @@ export default function DocumentsPage() {
   // 버려지고, Firestore에는 분석 결과(승인 대기 후보)와 최소한의 메타데이터만 남는다.
   async function handleAnalyzeUpload(e) {
     e.preventDefault();
-    if (!file || !form.title) return;
+    const errors = validateUploadForm(form, file);
+    if (Object.keys(errors).length > 0) {
+      setUploadErrors(errors);
+      if (errors.title) titleInputRef.current?.focus();
+      else if (errors.periodEnd) periodEndInputRef.current?.focus();
+      return;
+    }
+    setUploadErrors({});
 
     const format = detectFileFormat(file);
     if (format === "unsupported") {
@@ -162,6 +199,16 @@ export default function DocumentsPage() {
       ...prev,
       [docId]: { ...prev[docId], [itemId]: { ...(prev[docId]?.[itemId] ?? {}), ...patch } },
     }));
+    const armKey = `${docId}:${itemId}`;
+    setItemErrors((prev) => {
+      const fieldErrors = prev[armKey];
+      if (!fieldErrors) return prev;
+      const changedKeys = Object.keys(patch).filter((k) => fieldErrors[k]);
+      if (changedKeys.length === 0) return prev;
+      const nextFieldErrors = { ...fieldErrors };
+      for (const k of changedKeys) delete nextFieldErrors[k];
+      return { ...prev, [armKey]: nextFieldErrors };
+    });
   }
 
   function findConflict(item) {
@@ -193,9 +240,22 @@ export default function DocumentsPage() {
 
   async function handleSave(doc, rawItem) {
     const item = getEdit(doc.id, rawItem);
+    const armKey = `${doc.id}:${item.id}`;
+
+    const errors = validateExtractedItem(item);
+    if (Object.keys(errors).length > 0) {
+      setItemErrors((prev) => ({ ...prev, [armKey]: errors }));
+      return;
+    }
+    setItemErrors((prev) => {
+      if (!prev[armKey]) return prev;
+      const next = { ...prev };
+      delete next[armKey];
+      return next;
+    });
+
     const conflict = findConflict(item);
     const timeConflicts = findTimeConflictsFor(item, conflict);
-    const armKey = `${doc.id}:${item.id}`;
 
     if ((conflict || timeConflicts.length > 0) && !armed[armKey]) {
       setArmed((prev) => ({ ...prev, [armKey]: true }));
@@ -313,16 +373,23 @@ export default function DocumentsPage() {
 
       <section className="page__section">
         <h2 className="section__title">문서 분석</h2>
-        <form className="form doc-form" onSubmit={handleAnalyzeUpload}>
+        <form className="form doc-form" onSubmit={handleAnalyzeUpload} noValidate>
           <div className="doc-form__row">
-            <div className="field field--grow">
-              <label>제목</label>
+            <div className={"field field--grow" + (uploadErrors.title ? " field--invalid" : "")}>
+              <label htmlFor="doc-title">제목</label>
               <input
+                id="doc-title"
+                ref={titleInputRef}
+                aria-invalid={!!uploadErrors.title}
+                aria-describedby={uploadErrors.title ? "doc-title-error" : undefined}
                 value={form.title}
-                onChange={(e) => setForm({ ...form, title: e.target.value })}
+                onChange={(e) => {
+                  setForm({ ...form, title: e.target.value });
+                  setUploadErrors((prev) => (prev.title ? { ...prev, title: undefined } : prev));
+                }}
                 placeholder="예: 9월 2주 주간 교육계획"
-                required
               />
+              <FieldError id="doc-title-error" message={uploadErrors.title} />
             </div>
             <div className="field">
               <label>종류</label>
@@ -338,24 +405,36 @@ export default function DocumentsPage() {
 
           <div className="doc-form__row">
             <div className="field">
-              <label>기간 시작(선택)</label>
+              <label htmlFor="doc-periodStart">기간 시작(선택)</label>
               <input
+                id="doc-periodStart"
                 type="date"
                 value={form.periodStart}
-                onChange={(e) => setForm({ ...form, periodStart: e.target.value })}
+                onChange={(e) => {
+                  setForm({ ...form, periodStart: e.target.value });
+                  setUploadErrors((prev) => (prev.periodEnd ? { ...prev, periodEnd: undefined } : prev));
+                }}
               />
             </div>
-            <div className="field">
-              <label>기간 끝(선택)</label>
+            <div className={"field" + (uploadErrors.periodEnd ? " field--invalid" : "")}>
+              <label htmlFor="doc-periodEnd">기간 끝(선택)</label>
               <input
+                id="doc-periodEnd"
+                ref={periodEndInputRef}
                 type="date"
+                aria-invalid={!!uploadErrors.periodEnd}
+                aria-describedby={uploadErrors.periodEnd ? "doc-periodEnd-error" : undefined}
                 value={form.periodEnd}
-                onChange={(e) => setForm({ ...form, periodEnd: e.target.value })}
+                onChange={(e) => {
+                  setForm({ ...form, periodEnd: e.target.value });
+                  setUploadErrors((prev) => (prev.periodEnd ? { ...prev, periodEnd: undefined } : prev));
+                }}
               />
+              <FieldError id="doc-periodEnd-error" message={uploadErrors.periodEnd} />
             </div>
           </div>
 
-          <div className="field field--grow">
+          <div className={"field field--grow" + (uploadErrors.file ? " field--invalid" : "")}>
             <label>문서 파일</label>
             {/* 실제 <input type="file">는 그대로 유지하고 시각적으로만 숨긴다(display:none이
                 아니라 화면 밖으로 보내는 방식) - custom UI 클릭이 이 input을 그대로 연다. */}
@@ -364,8 +443,14 @@ export default function DocumentsPage() {
               type="file"
               className="doc-form__file-input"
               accept=".pdf,.xlsx,.xls,.png,.jpg,.jpeg,.docx"
-              onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+              aria-invalid={!!uploadErrors.file}
+              aria-describedby={uploadErrors.file ? "doc-file-error" : undefined}
+              onChange={(e) => {
+                setFile(e.target.files?.[0] ?? null);
+                setUploadErrors((prev) => (prev.file ? { ...prev, file: undefined } : prev));
+              }}
             />
+            <FieldError id="doc-file-error" message={uploadErrors.file} />
             {!file ? (
               <button type="button" className="doc-picker" onClick={() => fileInputRef.current?.click()}>
                 <span className="doc-picker__text">분석할 문서를 선택해주세요</span>
@@ -450,6 +535,7 @@ export default function DocumentsPage() {
                     const armKey = `${doc.id}:${item.id}`;
                     const isArmed = !!armed[armKey];
                     const hasWarning = !!conflict || timeConflicts.length > 0;
+                    const fieldErrors = itemErrors[armKey] || {};
 
                     return (
                       <div className="extracted-item" key={item.id}>
@@ -461,20 +547,28 @@ export default function DocumentsPage() {
                         </div>
 
                         <div className="form" style={{ marginBottom: 8 }}>
-                          <div className="field field--grow">
-                            <label>제목</label>
+                          <div className={"field field--grow" + (fieldErrors.title ? " field--invalid" : "")}>
+                            <label htmlFor={`item-title-${item.id}`}>제목</label>
                             <input
+                              id={`item-title-${item.id}`}
+                              aria-invalid={!!fieldErrors.title}
+                              aria-describedby={fieldErrors.title ? `item-title-error-${item.id}` : undefined}
                               value={editedItem.title}
                               onChange={(e) => setEdit(doc.id, item.id, { title: e.target.value })}
                             />
+                            <FieldError id={`item-title-error-${item.id}`} message={fieldErrors.title} />
                           </div>
-                          <div className="field">
-                            <label>날짜</label>
+                          <div className={"field" + (fieldErrors.date ? " field--invalid" : "")}>
+                            <label htmlFor={`item-date-${item.id}`}>날짜</label>
                             <input
+                              id={`item-date-${item.id}`}
                               type="date"
+                              aria-invalid={!!fieldErrors.date}
+                              aria-describedby={fieldErrors.date ? `item-date-error-${item.id}` : undefined}
                               value={editedItem.date}
                               onChange={(e) => setEdit(doc.id, item.id, { date: e.target.value })}
                             />
+                            <FieldError id={`item-date-error-${item.id}`} message={fieldErrors.date} />
                           </div>
                           {item.kind === "event" && (
                             <div className="field">
@@ -502,13 +596,17 @@ export default function DocumentsPage() {
                             </div>
                           )}
                           {item.kind === "event" && (
-                            <div className="field">
-                              <label>종료 시간</label>
+                            <div className={"field" + (fieldErrors.endTime ? " field--invalid" : "")}>
+                              <label htmlFor={`item-endTime-${item.id}`}>종료 시간</label>
                               <input
+                                id={`item-endTime-${item.id}`}
                                 type="time"
+                                aria-invalid={!!fieldErrors.endTime}
+                                aria-describedby={fieldErrors.endTime ? `item-endTime-error-${item.id}` : undefined}
                                 value={editedItem.endTime}
                                 onChange={(e) => setEdit(doc.id, item.id, { endTime: e.target.value })}
                               />
+                              <FieldError id={`item-endTime-error-${item.id}`} message={fieldErrors.endTime} />
                             </div>
                           )}
                           {item.kind === "event" && editedItem.eventType === "meeting" && (
@@ -540,21 +638,31 @@ export default function DocumentsPage() {
                           )}
                           {item.kind === "timetable_change" && (
                             <>
-                              <div className="field">
-                                <label>교시</label>
+                              <div className={"field" + (fieldErrors.period ? " field--invalid" : "")}>
+                                <label htmlFor={`item-period-${item.id}`}>교시</label>
                                 <input
+                                  id={`item-period-${item.id}`}
+                                  aria-invalid={!!fieldErrors.period}
+                                  aria-describedby={fieldErrors.period ? `item-period-error-${item.id}` : undefined}
                                   value={editedItem.period}
                                   onChange={(e) => setEdit(doc.id, item.id, { period: e.target.value })}
                                   placeholder="예: 5"
                                 />
+                                <FieldError id={`item-period-error-${item.id}`} message={fieldErrors.period} />
                               </div>
-                              <div className="field">
-                                <label>학급</label>
+                              <div className={"field" + (fieldErrors.className ? " field--invalid" : "")}>
+                                <label htmlFor={`item-className-${item.id}`}>학급</label>
                                 <input
+                                  id={`item-className-${item.id}`}
+                                  aria-invalid={!!fieldErrors.className}
+                                  aria-describedby={
+                                    fieldErrors.className ? `item-className-error-${item.id}` : undefined
+                                  }
                                   value={editedItem.className}
                                   onChange={(e) => setEdit(doc.id, item.id, { className: e.target.value })}
                                   placeholder="예: 3-2"
                                 />
+                                <FieldError id={`item-className-error-${item.id}`} message={fieldErrors.className} />
                               </div>
                             </>
                           )}
