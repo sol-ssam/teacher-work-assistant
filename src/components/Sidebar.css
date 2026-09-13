@@ -65,6 +65,7 @@
   position: sticky;
   top: 0;
   font-family: var(--font-family-base);
+  border-right: 1px solid var(--border-soft);
   transition: width 200ms ease, min-width 200ms ease;
 }
 
@@ -126,7 +127,7 @@
 }
 
 .sidebar__brand:hover {
-  background: rgba(201, 111, 134, 0.06);
+  background: rgba(0, 102, 204, 0.06);
 }
 
 .sidebar__brand:focus-visible {
@@ -216,7 +217,7 @@
 
 .sidebar__link:hover {
   color: var(--text-primary);
-  background: rgba(201, 111, 134, 0.06);
+  background: rgba(0, 102, 204, 0.06);
 }
 
 .sidebar__link--active {
@@ -363,7 +364,7 @@
 
 .sidebar__signout-icon:hover {
   color: var(--accent);
-  background: rgba(201, 111, 134, 0.08);
+  background: rgba(0, 102, 204, 0.08);
 }
 
 .sidebar__signout-icon:focus-visible {
@@ -395,7 +396,7 @@
     display: block;
     position: fixed;
     inset: 0;
-    background: rgba(59, 46, 46, 0.28);
+    background: rgba(0, 0, 0, 0.32);
     opacity: 0;
     pointer-events: none;
     transition: opacity 200ms ease;

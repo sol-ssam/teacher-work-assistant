@@ -223,10 +223,10 @@
   color: var(--accent);
 }
 
-/* 협의회 - 회의와 구분되는 muted rose-purple 계열, 강한 보라색은 피함 */
+/* 협의회 - 회의와 구분되는 muted indigo 계열, 강한 보라색은 피함 */
 .events-page .badge--council {
-  background: #efe3ec;
-  color: #9a5f8f;
+  background: #eef0fb;
+  color: #4b52b8;
 }
 
 @media (max-width: 640px) {
