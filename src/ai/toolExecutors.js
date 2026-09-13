@@ -3,7 +3,6 @@ import {
   getClassProgress,
   getTodayBaseTimetable,
   getTodayTimetableOverrides,
-  getImportantNotices,
 } from "../firebase/collections";
 import { todayDateString, todayWeekdayKorean, endOfMonthDateString } from "../utils/date";
 import { createCalendarEvent, deleteCalendarEvent, listCalendarEvents, MissingEndTimeError } from "../calendar/calendarApi";
@@ -57,10 +56,6 @@ function trimTimetable(t) {
 function trimOverride(o) {
   return { date: o.date, period: o.period, className: o.className, subject: o.subject };
 }
-function trimNotice(n) {
-  return { id: n.id, content: n.content, important: !!n.important, expiresAt: n.expiresAt ?? null };
-}
-
 // calendarHelpers: { getValidAccessToken, connect } - AssistantPage에서 useGoogleCalendar()로
 // 얻은 것을 그대로 전달받는다. Gemini에게는 이 객체나 access token 값 자체를 절대 넘기지
 // 않는다 - Gemini는 addToCalendar/attending 같은 "의도"만 함수 인자로 전달할 뿐이고,
@@ -336,18 +331,6 @@ async function execSearchTimetableOverrides(args, uid) {
     date === todayDateString() ? await getTodayTimetableOverrides(uid) : await listDocsByOwner("timetable_overrides", uid);
   const filtered = all.filter((o) => o.date === date);
   return { date, results: filtered.map(trimOverride) };
-}
-
-async function execSearchNotices(args, uid) {
-  const importantOnly = args.importantOnly !== false;
-  const today = todayDateString();
-  let all;
-  if (importantOnly) {
-    all = await getImportantNotices(uid);
-  } else {
-    all = (await listDocsByOwner("notices", uid)).filter((n) => !n.expiresAt || n.expiresAt >= today);
-  }
-  return { results: all.slice(0, MAX_RESULTS).map(trimNotice) };
 }
 
 // ---- 월별 수업 진도 관리 실행기 ----
@@ -1000,7 +983,6 @@ export const TOOL_EXECUTORS = {
   searchClassProgress: execSearchClassProgress,
   searchTimetable: execSearchTimetable,
   searchTimetableOverrides: execSearchTimetableOverrides,
-  searchNotices: execSearchNotices,
   addProgressPlanItems: execAddProgressPlanItems,
   getProgressStatus: execGetProgressStatus,
   getRemainingLessons: execGetRemainingLessons,

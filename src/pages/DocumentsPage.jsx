@@ -20,7 +20,6 @@ import {
   findTimetableOverrideConflict,
 } from "../utils/conflictDetection";
 import { findTimeConflicts } from "../utils/timeConflictDetection";
-import { todayDateString } from "../utils/date";
 import { EVENT_TYPES } from "../utils/constants";
 import "../pages/crud-shared.css";
 import "./DocumentsPage.css";
@@ -36,7 +35,6 @@ const KIND_LABEL = {
   event: "일정",
   task: "업무",
   timetable_change: "시간표 변경",
-  notice: "주요 안내",
 };
 
 const emptyForm = { title: "", type: "weekly_plan", periodStart: "", periodEnd: "" };
@@ -295,15 +293,6 @@ export default function DocumentsPage() {
       } else {
         await createDoc("timetable_overrides", user.uid, payload);
       }
-    } else {
-      await createDoc("notices", user.uid, {
-        content: item.memo ? `${item.title} - ${item.memo}` : item.title,
-        important: false,
-        expiresAt: "",
-        dateAdded: todayDateString(),
-        source: "ai_document",
-        createdAt: now,
-      });
     }
 
     setArmed((prev) => ({ ...prev, [armKey]: false }));

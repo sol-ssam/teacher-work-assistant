@@ -1,10 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
-import {
-  getImportantNotices,
-  getClassProgress,
-} from "../firebase/collections";
+import { getClassProgress } from "../firebase/collections";
 import { listDocsByOwner } from "../firebase/crud";
 import { getEffectiveDayTimetable, isTimetableChangedDay } from "../utils/effectiveTimetable";
 import { getSettings, markBriefingShownToday } from "../firebase/settingsService";
@@ -70,7 +67,6 @@ export default function Home() {
           listDocsByOwner("school_day_schedules", user.uid),
           listDocsByOwner("events", user.uid),
           listDocsByOwner("tasks", user.uid),
-          getImportantNotices(user.uid),
           listDocsByOwner("lesson_plan", user.uid),
           getClassProgress(user.uid),
         ]);
@@ -82,10 +78,9 @@ export default function Home() {
         const { value: schoolDaySchedules, failed: schedulesFailed } = unwrap(results[2], "school_day_schedules");
         const { value: allEvents, failed: eventsFailed } = unwrap(results[3], "events");
         const { value: allTasks, failed: tasksFailed } = unwrap(results[4], "tasks");
-        const { value: notices, failed: noticesFailed } = unwrap(results[5], "getImportantNotices");
-        const { value: lessonPlans, failed: lessonPlansFailed } = unwrap(results[6], "lesson_plan");
+        const { value: lessonPlans, failed: lessonPlansFailed } = unwrap(results[5], "lesson_plan");
         const { value: classProgress, failed: classProgressFailed } = unwrap(
-          results[7],
+          results[6],
           "getClassProgress"
         );
 
@@ -129,8 +124,6 @@ export default function Home() {
           dueTasks: sortByPriorityThenDate(deriveTodayDueTasks(allTasks, today)),
           upcomingTasks: sortByPriorityThenDate(deriveUpcomingTasks(allTasks, today)),
           tasksFailed,
-          notices,
-          noticesFailed,
           diffMessages,
           progressFailed,
         });
@@ -197,12 +190,6 @@ export default function Home() {
           text: `${eventTypeDisplayLabel(e)} — ${e.title}`,
           meta: e.startTime || "오늘",
         })),
-        ...data.notices.map((n) => ({
-          key: `nt-${n.id}`,
-          category: "주요 공지",
-          text: n.content,
-          meta: n.expiresAt ? `~${formatDateDisplay(n.expiresAt)}` : null,
-        })),
       ]
     : [];
 
@@ -212,7 +199,7 @@ export default function Home() {
     <div className="home">
       <header className="home__head">
         <div className="home__head-text">
-          <p className="home__greeting">솔쌤 안녕하세요 🌷</p>
+          <p className="home__greeting">선생님 안녕하세요 🌷</p>
           <p className="home__subgreeting">오늘도 좋은 하루 되세요!</p>
           <p className="home__date">{todayDisplayString()}</p>
 

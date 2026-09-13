@@ -195,7 +195,7 @@
 }
 
 /* ===== 구분 badge - subtle, 텍스트가 주 구분 수단 ===== */
-/* .events-page로 범위를 좁혀 crud-shared.css를 공유하는 다른 페이지(업무/주요안내 등)의
+/* .events-page로 범위를 좁혀 crud-shared.css를 공유하는 다른 페이지(업무 등)의
    .badge 스타일에 영향을 주지 않는다. */
 .events-page .badge {
   display: inline-block;

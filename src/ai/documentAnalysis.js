@@ -18,8 +18,8 @@ const candidateItemSchema = Schema.object({
   properties: {
     kind: Schema.enumString({
       description:
-        "추출된 항목의 종류. event=학사일정/학교행사/회의, task=제출·마감 업무, timetable_change=시간표 변경 가능성, notice=기타 중요 정보",
-      enum: ["event", "task", "timetable_change", "notice"],
+        "추출된 항목의 종류. event=학사일정/학교행사/회의, task=제출·마감 업무, timetable_change=시간표 변경 가능성",
+      enum: ["event", "task", "timetable_change"],
     }),
     title: Schema.string({ description: "항목 제목 (짧게)" }),
     date: Schema.string({ description: "관련 날짜 (YYYY-MM-DD). 알 수 없으면 빈 문자열." }),
@@ -62,7 +62,6 @@ function buildPrompt(docType, periodStart, periodEnd) {
 - 제출 또는 마감 업무
 - 준비해야 할 업무
 - 수업에 영향을 주는 일정, 시간표 변경 가능성이 있는 정보
-- 그 외 교사에게 중요할 가능성이 높은 정보
 
 각 항목의 날짜는 문서에 나온 표현을 오늘 날짜를 기준으로 실제 YYYY-MM-DD로 계산해서 채워라.
 날짜를 알 수 없으면 date를 빈 문자열로 둬라. 정보를 지어내지 말고, 문서에 실제로 있는 내용만 추출해라.

@@ -10,7 +10,6 @@ export const WORK_DATA_COLLECTIONS = [
   "class_progress",
   "events",
   "tasks",
-  "notices",
   "source_documents",
   "homeroom_timetable",
   "progress_plans",

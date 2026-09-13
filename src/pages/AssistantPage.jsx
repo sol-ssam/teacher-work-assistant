@@ -96,7 +96,7 @@ export default function AssistantPage() {
       <header className="assistant-page__head">
         <h1 className="assistant-page__title">AI 비서</h1>
         <p className="assistant-page__desc">
-          무엇이든 편하게 말씀해보세요. 일정, 업무, 수업과 시간표까지 솔쌤 AI 비서가 함께 정리해드려요.
+          무엇이든 편하게 말씀해보세요. 일정, 업무, 수업과 시간표까지 교사용 업무 비서가 함께 정리해드려요.
         </p>
         <p className="assistant-page__notice">🔒 학생 개인정보나 민감한 상담 내용은 입력하지 말아 주세요.</p>
       </header>
@@ -135,7 +135,7 @@ export default function AssistantPage() {
             </div>
           ))
         )}
-        {loading && <p className="assistant-page__status">솔쌤 AI 비서가 확인하고 있어요…</p>}
+        {loading && <p className="assistant-page__status">교사용 업무 비서가 확인하고 있어요…</p>}
         <div ref={bottomRef} />
       </div>
 

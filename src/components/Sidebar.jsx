@@ -61,12 +61,6 @@ const IconBriefcase = () => (
     <path d="M8.5 7.5V6a2 2 0 0 1 2-2h3a2 2 0 0 1 2 2v1.5M3.5 12.5h17" />
   </Icon>
 );
-const IconBell = () => (
-  <Icon>
-    <path d="M6 10.5a6 6 0 1 1 12 0c0 4 1.4 5.2 1.4 5.2H4.6S6 14.5 6 10.5Z" />
-    <path d="M10 18.5a2 2 0 0 0 4 0" />
-  </Icon>
-);
 const IconUpload = () => (
   <Icon>
     <path d="M12 15V4M8 8l4-4 4 4" />
@@ -118,7 +112,6 @@ const NAV_ITEMS = [
   { to: "/progress", label: "수업 진도", Icon: IconChart },
   { to: "/events", label: "일정", Icon: IconCalendar },
   { to: "/tasks", label: "업무", Icon: IconBriefcase },
-  { to: "/notices", label: "주요 안내", Icon: IconBell },
   { to: "/documents", label: "자료 업로드", Icon: IconUpload },
   { to: "/settings", label: "설정", Icon: IconGear },
 ];
@@ -166,7 +159,7 @@ function SidebarContent({ collapsed, onNavigate }) {
         </span>
         {!collapsed && (
           <span className="sidebar__brand-text">
-            <span className="sidebar__brand-name">솔쌤 AI 비서</span>
+            <span className="sidebar__brand-name">교사용 업무 비서</span>
             <span className="sidebar__brand-sub">선생님의 하루를 함께해요</span>
           </span>
         )}
@@ -278,7 +271,7 @@ export default function Sidebar() {
           <IconHamburger />
         </button>
         <Link to="/" className="mobile-header__brand">
-          <span aria-hidden="true">🌷</span> 솔쌤 AI 비서
+          <span aria-hidden="true">🌷</span> 교사용 업무 비서
         </Link>
         <div className="mobile-header__user" aria-hidden="true">
           {user && <IconUser />}

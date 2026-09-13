@@ -41,18 +41,6 @@ export async function getUpcomingTasks(uid, withinDays = 7) {
   return all.filter((t) => !t.completed && t.dueDate > today && t.dueDate <= limitStr);
 }
 
-export async function getImportantNotices(uid) {
-  const today = todayDateString();
-  const q = query(
-    collection(db, "notices"),
-    where("ownerId", "==", uid),
-    where("important", "==", true)
-  );
-  const snap = await getDocs(q);
-  // expiresAt이 지난 공지는 제외 (클라이언트 측 필터 — 복합 인덱스 부담을 줄임)
-  return toDocs(snap).filter((n) => !n.expiresAt || n.expiresAt >= today);
-}
-
 export async function getTodayTimetableOverrides(uid) {
   const today = todayDateString();
   const q = query(

@@ -21,7 +21,7 @@ export default function PrivacyPage() {
         <ul>
           <li>Google 로그인에 필요한 기본 계정 정보</li>
           <li>Firebase Authentication에서 제공되는 사용자 식별 정보</li>
-          <li>사용자가 직접 앱에 입력한 일정, 업무, 시간표, 수업 진도 및 주요 안내 정보</li>
+          <li>사용자가 직접 앱에 입력한 일정, 업무, 시간표, 수업 진도 정보</li>
           <li>사용자가 분석을 위해 직접 선택한 문서의 내용</li>
           <li>Google Calendar 연동을 사용자가 선택한 경우 필요한 Calendar 접근 권한</li>
         </ul>
@@ -44,7 +44,7 @@ export default function PrivacyPage() {
             사용합니다.
           </li>
           <li>
-            시간표, 일반 업무, 주요 안내, 수업 진도 등은 자동으로 Google Calendar에 전송되지 않습니다.
+            시간표, 일반 업무, 수업 진도 등은 자동으로 Google Calendar에 전송되지 않습니다.
           </li>
           <li>
             이 앱이 생성한 Google Calendar 일정을 식별하기 위해 필요한 이벤트 ID를 Firestore에
@@ -84,7 +84,7 @@ export default function PrivacyPage() {
         <ul>
           <li>
             사용자는 이 기능으로 자신의 일정, 업무, 시간표, 시간표 변경, 수업 계획, 수업 진도,
-            주요 안내, 문서 분석 기록을 삭제할 수 있습니다.
+            문서 분석 기록을 삭제할 수 있습니다.
           </li>
           <li>전체 사용자 데이터 초기화를 선택하면 설정(settings) 데이터도 함께 삭제됩니다.</li>
           <li>이 초기화 기능으로 Firebase Authentication 계정 자체가 삭제되지는 않습니다.</li>

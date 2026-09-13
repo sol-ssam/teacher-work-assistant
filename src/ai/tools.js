@@ -225,18 +225,6 @@ export const searchTimetableOverridesDeclaration = {
   }),
 };
 
-export const searchNoticesDeclaration = {
-  name: "searchNotices",
-  description:
-    "등록된 주요 안내(일정/업무는 아니지만 기억해야 할 중요 정보)를 조회한다 (기본적으로 유효기간이 지나지 않은 중요 안내만).",
-  parameters: Schema.object({
-    properties: {
-      importantOnly: Schema.boolean({ description: "중요 안내만 조회할지 (선택, 기본 true)" }),
-    },
-    optionalProperties: ["importantOnly"],
-  }),
-};
-
 // ---- 아래부터는 월별 수업 진도 관리(progress_plans/progress_checks/school_day_schedules/
 // lesson_adjustments) 관련 도구다. Google Calendar나 기존 class_progress 도구와는 완전히
 //별개다. 실제 계산(남은 수업 횟수, 진도 비교, confirmed/needs_review 판정)은 전부 클라이언트
@@ -480,7 +468,6 @@ export const TOOLS = [
       // 실행기/선언 자체는 과거 호환을 위해 코드에 남겨뒀다(다른 곳에서 참조하지 않음).
       searchTimetableDeclaration,
       searchTimetableOverridesDeclaration,
-      searchNoticesDeclaration,
       addProgressPlanItemsDeclaration,
       getProgressStatusDeclaration,
       getRemainingLessonsDeclaration,

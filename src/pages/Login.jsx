@@ -34,7 +34,7 @@ export default function Login() {
     <div className="login">
       <div className="login__glow" aria-hidden="true" />
       <div className="login__card">
-        <h1 className="login__title">솔쌤 AI 비서 🌷</h1>
+        <h1 className="login__title">교사용 업무 비서 🌷</h1>
         <p className="login__subtitle">선생님의 하루를 함께해요.</p>
         <p className="login__description">
           수업부터 일정과 업무까지, 필요한 정보를 한곳에서 관리해보세요.

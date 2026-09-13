@@ -9,7 +9,6 @@ import TimetablePage from "./pages/TimetablePage";
 import MonthlyProgressPage from "./pages/MonthlyProgressPage";
 import EventsPage from "./pages/EventsPage";
 import TasksPage from "./pages/TasksPage";
-import NoticesPage from "./pages/NoticesPage";
 import DocumentsPage from "./pages/DocumentsPage";
 import SettingsPage from "./pages/SettingsPage";
 import PrivacyPage from "./pages/PrivacyPage";
@@ -24,7 +23,7 @@ function AuthenticatedApp() {
         <span className="app-loading__mark" aria-hidden="true">
           🌷
         </span>
-        <span className="app-loading__brand">솔쌤 AI 비서</span>
+        <span className="app-loading__brand">교사용 업무 비서</span>
         <span className="app-loading__text">불러오는 중…</span>
       </div>
     );
@@ -46,7 +45,6 @@ function AuthenticatedApp() {
           <Route path="/monthly-progress" element={<Navigate to="/progress" replace />} />
           <Route path="/events" element={<EventsPage />} />
           <Route path="/tasks" element={<TasksPage />} />
-          <Route path="/notices" element={<NoticesPage />} />
           <Route path="/documents" element={<DocumentsPage />} />
           <Route path="/settings" element={<SettingsPage />} />
         </Routes>
