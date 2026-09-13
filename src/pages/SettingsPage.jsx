@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { useGoogleCalendar } from "../contexts/GoogleCalendarContext";
 import { listDocsByOwner } from "../firebase/crud";
@@ -283,6 +284,21 @@ export default function SettingsPage() {
             </button>
             {homeroomSaved && <span className="setting-card__saved">저장했습니다.</span>}
           </div>
+        </div>
+      </div>
+
+      <div className="setting-card">
+        <h2 className="setting-card__title">
+          <span aria-hidden="true">📄</span> 서비스 정보
+        </h2>
+        <p className="setting-card__desc">이용약관과 개인정보 처리방침을 확인할 수 있어요.</p>
+        <div className="setting-card__actions">
+          <Link to="/terms" className="setting-card__link">
+            이용약관
+          </Link>
+          <Link to="/privacy" className="setting-card__link">
+            개인정보 처리방침
+          </Link>
         </div>
       </div>
 

@@ -12,6 +12,7 @@ import TasksPage from "./pages/TasksPage";
 import DocumentsPage from "./pages/DocumentsPage";
 import SettingsPage from "./pages/SettingsPage";
 import PrivacyPage from "./pages/PrivacyPage";
+import TermsPage from "./pages/TermsPage";
 import "./App.css";
 
 function AuthenticatedApp() {
@@ -53,12 +54,14 @@ function AuthenticatedApp() {
   );
 }
 
-// /privacy는 Google OAuth 브랜딩(개인정보처리방침 링크)용 공개 페이지라서, 로그인 여부를
-// 확인하기 전에 먼저 매치되어야 한다. 그 외 모든 경로는 기존 그대로 로그인 게이트를 거친다.
+// /privacy, /terms는 Google OAuth 브랜딩(개인정보처리방침/이용약관 링크)용 공개
+// 페이지라서, 로그인 여부를 확인하기 전에 먼저 매치되어야 한다. 그 외 모든 경로는
+// 기존 그대로 로그인 게이트를 거친다.
 function AppShell() {
   return (
     <Routes>
       <Route path="/privacy" element={<PrivacyPage />} />
+      <Route path="/terms" element={<TermsPage />} />
       <Route path="/*" element={<AuthenticatedApp />} />
     </Routes>
   );

@@ -157,6 +157,17 @@
   gap: 10px;
 }
 
+.setting-card__link {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.setting-card__link:hover {
+  text-decoration: underline;
+}
+
 .setting-card__radio-group {
   display: flex;
   gap: 18px;

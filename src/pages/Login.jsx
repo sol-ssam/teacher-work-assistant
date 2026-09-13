@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import { signInWithGoogle } from "../firebase/authService";
 import "./Login.css";
 
@@ -44,6 +45,11 @@ export default function Login() {
         </button>
         {loginError && <p className="login__error">{loginError}</p>}
       </div>
+      <p className="login__legal-links">
+        <Link to="/terms">이용약관</Link>
+        <span aria-hidden="true"> · </span>
+        <Link to="/privacy">개인정보 처리방침</Link>
+      </p>
     </div>
   );
 }
