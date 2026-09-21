@@ -16,7 +16,7 @@ import TermsPage from "./pages/TermsPage";
 import "./App.css";
 
 function AuthenticatedApp() {
-  const { user, loading } = useAuth();
+  const { user, loading, previewPreparing } = useAuth();
 
   if (loading) {
     return (
@@ -25,7 +25,7 @@ function AuthenticatedApp() {
           🌷
         </span>
         <span className="app-loading__brand">교사용 업무 비서</span>
-        <span className="app-loading__text">불러오는 중…</span>
+        <span className="app-loading__text">{previewPreparing ? "미리보기 준비 중…" : "불러오는 중…"}</span>
       </div>
     );
   }

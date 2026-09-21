@@ -391,7 +391,7 @@ export default function SettingsPage() {
         <div className="setting-card">
           <h2 className="setting-card__title">데이터 초기화</h2>
           <p className="setting-card__desc">
-            현재 로그인한 계정({user?.email})의 데이터만 삭제돼요. 개인 설정은 유지되며 삭제한
+            현재 로그인한 계정({user?.isAnonymous ? "미리보기" : user?.email})의 데이터만 삭제돼요. 개인 설정은 유지되며 삭제한
             데이터는 복구할 수 없어요.
           </p>
           <div className="setting-card__actions">

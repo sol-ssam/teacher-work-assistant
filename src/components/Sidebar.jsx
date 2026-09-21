@@ -150,6 +150,9 @@ function Avatar({ user, size }) {
 // collapsed일 때만 텍스트를 숨기고 아이콘 hover/focus 시 tooltip을 보여준다.
 function SidebarContent({ collapsed, onNavigate }) {
   const { user } = useAuth();
+  // '미리보기로 체험하기'(Firebase Anonymous) 사용자에게만 표시/종료 문구를 바꾼다.
+  // Google 사용자는 이 값이 항상 false라 기존 화면과 완전히 동일하다.
+  const isPreview = user?.isAnonymous === true;
 
   return (
     <>
@@ -189,7 +192,9 @@ function SidebarContent({ collapsed, onNavigate }) {
             <div className="sidebar__user-collapsed">
               <div
                 className="sidebar__user-mini"
-                data-tooltip={user.displayName ? `${user.displayName} 선생님` : "사용자"}
+                data-tooltip={
+                  isPreview ? "미리보기 모드" : user.displayName ? `${user.displayName} 선생님` : "사용자"
+                }
               >
                 <Avatar user={user} size={32} />
               </div>
@@ -197,8 +202,8 @@ function SidebarContent({ collapsed, onNavigate }) {
                 type="button"
                 className="sidebar__signout-icon"
                 onClick={signOutUser}
-                aria-label="로그아웃"
-                data-tooltip="로그아웃"
+                aria-label={isPreview ? "미리보기 종료" : "로그아웃"}
+                data-tooltip={isPreview ? "미리보기 종료" : "로그아웃"}
               >
                 <IconLogout />
               </button>
@@ -210,8 +215,9 @@ function SidebarContent({ collapsed, onNavigate }) {
                 <div className="sidebar__user-name">
                   {user.displayName ? `${user.displayName} 선생님` : "선생님"}
                 </div>
+                {isPreview && <span className="sidebar__preview-badge">미리보기 모드</span>}
                 <button type="button" className="sidebar__signout" onClick={signOutUser}>
-                  로그아웃
+                  {isPreview ? "미리보기 종료" : "로그아웃"}
                 </button>
               </div>
             </div>
@@ -273,6 +279,7 @@ export default function Sidebar() {
         <Link to="/" className="mobile-header__brand">
           <span aria-hidden="true">🌷</span> 교사용 업무 비서
         </Link>
+        {user?.isAnonymous === true && <span className="mobile-header__preview">미리보기</span>}
         <div className="mobile-header__user" aria-hidden="true">
           {user && <IconUser />}
         </div>

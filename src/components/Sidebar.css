@@ -42,6 +42,19 @@
   word-break: keep-all;
 }
 
+/* 미리보기(Anonymous) 사용자에게만 보이는 작은 표시 - Mobile에서는 drawer를 열지 않아도 보이게 한다 */
+.mobile-header__preview {
+  flex-shrink: 0;
+  margin-right: 8px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-radius: 999px;
+  padding: 3px 9px;
+  white-space: nowrap;
+}
+
 .mobile-header__user {
   color: var(--text-secondary);
   display: flex;
@@ -307,6 +320,19 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.sidebar__preview-badge {
+  display: block;
+  width: fit-content;
+  margin-bottom: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-radius: 999px;
+  padding: 2px 8px;
+  white-space: nowrap;
 }
 
 .sidebar__signout {

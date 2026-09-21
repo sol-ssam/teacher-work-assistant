@@ -98,6 +98,28 @@
   cursor: default;
 }
 
+/* '미리보기로 체험하기' - Google 로그인보다 시각적으로 한 단계 낮은 보조 액션(윤곽선 버튼) */
+.login__button--secondary {
+  margin-top: 10px;
+  background: transparent;
+  color: var(--accent);
+  border: 1px solid var(--accent);
+}
+
+.login__button--secondary:hover {
+  filter: none;
+  background: var(--accent-soft);
+}
+
+.login__preview-hint {
+  margin: 10px 0 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+  word-break: keep-all;
+  overflow-wrap: break-word;
+}
+
 .login__legal-links {
   position: relative;
   z-index: 1;
