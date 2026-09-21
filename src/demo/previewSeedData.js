@@ -106,12 +106,17 @@ export function buildPreviewSeed({ uid, today, nowIso }) {
   const [year, monthRaw] = today.split("-");
   const month = String(Number(monthRaw));
   const docs = [];
+  // 문서 ID에는 반드시 현재 익명 사용자의 UID를 넣는다. ID가 모든 Preview 사용자에게 같으면
+  // 이전 Preview 사용자가 만든 문서와 충돌해서, 새 사용자의 쓰기가 create가 아니라 "남의 문서
+  // update"로 판정되어 Rules에서 거부된다. 문서끼리 서로 참조하는 ID(planItemId 등)도 모두 이
+  // 함수로 만든 ID에서 파생되므로 항상 같은 UID namespace 안의 문서를 가리킨다.
+  const docId = (suffix) => `preview_${uid}_${suffix}`;
   const add = (collection, id, data) => docs.push({ collection, id, data: { ...data, ownerId: uid } });
   const stamps = { createdAt: nowIso, updatedAt: nowIso };
 
   // ---- 시간표 ----
   TIMETABLE_ROWS.forEach(([dayOfWeek, period, className], i) => {
-    add("timetable", `preview_timetable_${String(i + 1).padStart(2, "0")}`, {
+    add("timetable", docId(`timetable_${String(i + 1).padStart(2, "0")}`), {
       dayOfWeek,
       period,
       className,
@@ -121,7 +126,7 @@ export function buildPreviewSeed({ uid, today, nowIso }) {
 
   // ---- 진도 계획(progress_plans) ----
   const planDocs = PLAN_ITEMS.map((p, i) => ({
-    id: `preview_plan_${i + 1}`,
+    id: docId(`plan_${i + 1}`),
     order: i,
     title: p.title,
     estimatedLessons: p.estimatedLessons,
@@ -148,7 +153,7 @@ export function buildPreviewSeed({ uid, today, nowIso }) {
     if (cp.current) {
       target = planDocs[cp.current.index];
       completedIds = computeCompletedIdsBefore(planDocs, target.id);
-      add("progress_current", `preview_current_${cp.className}`, {
+      add("progress_current", docId(`current_${cp.className}`), {
         className: cp.className,
         grade: GRADE,
         planItemId: target.id,
@@ -159,7 +164,7 @@ export function buildPreviewSeed({ uid, today, nowIso }) {
         lastClassDate,
         createdAt: nowIso,
       });
-      add("progress_history", `preview_history_${cp.className}`, {
+      add("progress_history", docId(`history_${cp.className}`), {
         className: cp.className,
         grade: GRADE,
         date: lastClassDate,
@@ -174,7 +179,7 @@ export function buildPreviewSeed({ uid, today, nowIso }) {
     } else {
       target = planDocs[cp.completedThrough];
       completedIds = computeCompletedIdsThrough(planDocs, target.id);
-      add("progress_history", `preview_history_${cp.className}`, {
+      add("progress_history", docId(`history_${cp.className}`), {
         className: cp.className,
         grade: GRADE,
         date: lastClassDate,
@@ -188,7 +193,7 @@ export function buildPreviewSeed({ uid, today, nowIso }) {
     }
 
     for (const planItemId of completedIds) {
-      add("progress_checks", `preview_check_${cp.className}_${planIndexById[planItemId]}`, {
+      add("progress_checks", docId(`check_${cp.className}_${planIndexById[planItemId]}`), {
         planItemId,
         className: cp.className,
         completed: true,
@@ -269,7 +274,7 @@ export function buildPreviewSeed({ uid, today, nowIso }) {
   ];
   for (const s of schedules) {
     const { key, ...fields } = s;
-    add("school_day_schedules", `preview_schedule_${key}`, { ...scheduleBase, ...fields });
+    add("school_day_schedules", docId(`schedule_${key}`), { ...scheduleBase, ...fields });
   }
 
   // ---- 수업 횟수 수동 보정(lesson_adjustments) - 학사일정에 없던 학급 자체 사정 1건 ----
@@ -277,7 +282,7 @@ export function buildPreviewSeed({ uid, today, nowIso }) {
   // (3-6은 금요일 2교시 수업이 있다)에 둔다.
   let adjustmentDate = nextWeekdayOnOrAfter(minDate, "금");
   while (used.has(adjustmentDate)) adjustmentDate = addDaysToDateString(adjustmentDate, 7);
-  add("lesson_adjustments", "preview_adjustment_306", {
+  add("lesson_adjustments", docId("adjustment_306"), {
     date: adjustmentDate,
     className: "306",
     delta: -1,
@@ -330,7 +335,7 @@ export function buildPreviewSeed({ uid, today, nowIso }) {
   ];
   for (const e of events) {
     const { key, offset, date, ...fields } = e;
-    add("events", `preview_event_${key}`, {
+    add("events", docId(`event_${key}`), {
       ...eventBase,
       startTime: "",
       ...fields,
@@ -357,7 +362,7 @@ export function buildPreviewSeed({ uid, today, nowIso }) {
     { key: "done_3", offset: -7, title: "교과협의회 회의록 확인", priority: "low", completed: true },
   ];
   for (const t of tasks) {
-    add("tasks", `preview_task_${t.key}`, {
+    add("tasks", docId(`task_${t.key}`), {
       title: t.title,
       dueDate: addDaysToDateString(today, t.offset),
       priority: t.priority,
@@ -381,6 +386,9 @@ export function assertPreviewSeedIntegrity(seed, uid) {
 
   if (seed.docs.some((d) => d.data.ownerId !== uid)) fail("ownerId가 현재 사용자 UID가 아닌 문서가 있습니다.");
   if (new Set(seed.docs.map((d) => `${d.collection}/${d.id}`)).size !== seed.docs.length) fail("문서 ID가 중복됩니다.");
+  // 다른 Preview 사용자의 문서와 ID가 충돌하지 않도록, 모든 문서 ID가 자기 UID namespace여야 한다.
+  const idPrefix = `preview_${uid}_`;
+  if (seed.docs.some((d) => !d.id.startsWith(idPrefix))) fail("UID namespace가 없는 문서 ID가 있습니다.");
 
   const timetable = byCollection("timetable");
   if (timetable.length !== 16) fail(`주당 수업이 16시수가 아닙니다(${timetable.length}).`);
@@ -397,6 +405,10 @@ export function assertPreviewSeedIntegrity(seed, uid) {
   if (plans.length !== PLAN_ITEMS.length) fail("진도 계획 항목 수가 다릅니다.");
   for (const c of byCollection("progress_checks")) {
     if (!planById.has(c.data.planItemId)) fail("존재하지 않는 계획 항목을 가리키는 progress_checks가 있습니다.");
+  }
+  for (const h of byCollection("progress_history")) {
+    const refs = [h.data.planItemId, ...(h.data.completedPlanItemIds || [])];
+    if (refs.some((ref) => !planById.has(ref))) fail("존재하지 않는 계획 항목을 가리키는 progress_history가 있습니다.");
   }
   for (const c of byCollection("progress_current")) {
     const plan = planById.get(c.data.planItemId);
