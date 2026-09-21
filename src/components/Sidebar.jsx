@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { NavLink, Link } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { signOutUser } from "../firebase/authService";
+import { endPreviewSession } from "../demo/cleanupPreviewData";
 import "./Sidebar.css";
 
 const SIDEBAR_COLLAPSED_KEY = "teacherAssistant.sidebarCollapsed";
@@ -153,6 +154,23 @@ function SidebarContent({ collapsed, onNavigate }) {
   // '미리보기로 체험하기'(Firebase Anonymous) 사용자에게만 표시/종료 문구를 바꾼다.
   // Google 사용자는 이 값이 항상 false라 기존 화면과 완전히 동일하다.
   const isPreview = user?.isAnonymous === true;
+  const [endingPreview, setEndingPreview] = useState(false);
+  const [endPreviewError, setEndPreviewError] = useState("");
+
+  // 미리보기 종료: 이 익명 사용자의 체험 데이터 삭제 → 성공하면 signOut. 실패하면 로그아웃하지
+  // 않고 안내만 보여줘서 다시 시도할 수 있다. (Google 사용자는 이 함수를 쓰지 않는다.)
+  async function handleEndPreview() {
+    if (endingPreview) return;
+    setEndingPreview(true);
+    setEndPreviewError("");
+    try {
+      await endPreviewSession(user);
+    } catch (error) {
+      console.error("Preview end failed:", error?.code, error?.message);
+      setEndPreviewError("미리보기 종료 중 오류가 발생했습니다.");
+      setEndingPreview(false);
+    }
+  }
 
   return (
     <>
@@ -201,9 +219,12 @@ function SidebarContent({ collapsed, onNavigate }) {
               <button
                 type="button"
                 className="sidebar__signout-icon"
-                onClick={signOutUser}
+                onClick={isPreview ? handleEndPreview : signOutUser}
+                disabled={isPreview && endingPreview}
                 aria-label={isPreview ? "미리보기 종료" : "로그아웃"}
-                data-tooltip={isPreview ? "미리보기 종료" : "로그아웃"}
+                data-tooltip={
+                  isPreview ? endPreviewError || (endingPreview ? "종료 중…" : "미리보기 종료") : "로그아웃"
+                }
               >
                 <IconLogout />
               </button>
@@ -216,9 +237,19 @@ function SidebarContent({ collapsed, onNavigate }) {
                   {user.displayName ? `${user.displayName} 선생님` : "선생님"}
                 </div>
                 {isPreview && <span className="sidebar__preview-badge">미리보기 모드</span>}
-                <button type="button" className="sidebar__signout" onClick={signOutUser}>
-                  {isPreview ? "미리보기 종료" : "로그아웃"}
+                <button
+                  type="button"
+                  className="sidebar__signout"
+                  onClick={isPreview ? handleEndPreview : signOutUser}
+                  disabled={isPreview && endingPreview}
+                >
+                  {isPreview ? (endingPreview ? "종료 중…" : "미리보기 종료") : "로그아웃"}
                 </button>
+                {isPreview && endPreviewError && (
+                  <span className="sidebar__preview-error" role="alert">
+                    {endPreviewError}
+                  </span>
+                )}
               </div>
             </div>
           ))}
