@@ -243,6 +243,35 @@ export default function TimetablePage() {
   // 담임으로 설정된 사용자에게만 탭이 나타난다.
   const [view, setView] = useState("mine"); // "mine" | "homeroom"
   const [mineSubTab, setMineSubTab] = useState("basic"); // "basic" | "changes" ("mine" 안에서만 쓰는 상위 탭)
+
+  // "기본 시간표" 탭에서 셀을 선택해 편집하던 중 다른 내부 탭으로 넘어가면, 그 셀은 더 이상
+  // 화면에 보이지 않는데도 selectedCell/cellForm state는 그대로 남아 있었다 - 다시 "기본
+  // 시간표"로 돌아오면 예전에 열려 있던 편집 폼이 그대로 다시 나타나는 문제가 있었다.
+  // 탭을 옮길 때 "편집 대상과 강하게 연결된" state만 정리한다 - 새로 등록 중인 일시
+  // 변경(overrideForm)이나 미리보기(previewEntries) draft는 건드리지 않는다.
+  function resetMineEditState() {
+    setSelectedCell(null);
+    setCellForm(emptyCellForm);
+    cellErrors.clearAll();
+    cancelEditOverride();
+  }
+
+  function resetHomeroomEditState() {
+    setHrSelectedCell(null);
+    setHrCellForm(emptyHrCellForm);
+    hrCellErrors.clearAll();
+  }
+
+  function handleSetMineSubTab(tab) {
+    resetMineEditState();
+    setMineSubTab(tab);
+  }
+
+  function handleSetView(nextView) {
+    resetMineEditState();
+    resetHomeroomEditState();
+    setView(nextView);
+  }
   const [isHomeroomTeacher, setIsHomeroomTeacher] = useState(false);
   const [homeroomClass, setHomeroomClass] = useState("");
 
@@ -794,14 +823,14 @@ export default function TimetablePage() {
           <button
             type="button"
             className={"tt-view-switch__btn" + (view === "mine" ? " tt-view-switch__btn--active" : "")}
-            onClick={() => setView("mine")}
+            onClick={() => handleSetView("mine")}
           >
             내 수업 시간표
           </button>
           <button
             type="button"
             className={"tt-view-switch__btn" + (view === "homeroom" ? " tt-view-switch__btn--active" : "")}
-            onClick={() => setView("homeroom")}
+            onClick={() => handleSetView("homeroom")}
           >
             {homeroomClass ? `${homeroomClass} 학급 시간표` : "담임 학급 시간표"}
           </button>
@@ -819,7 +848,7 @@ export default function TimetablePage() {
               role="tab"
               aria-selected={mineSubTab === "basic"}
               className={"tt-tabs__btn" + (mineSubTab === "basic" ? " tt-tabs__btn--active" : "")}
-              onClick={() => setMineSubTab("basic")}
+              onClick={() => handleSetMineSubTab("basic")}
             >
               기본 시간표
             </button>
@@ -828,7 +857,7 @@ export default function TimetablePage() {
               role="tab"
               aria-selected={mineSubTab === "changes"}
               className={"tt-tabs__btn" + (mineSubTab === "changes" ? " tt-tabs__btn--active" : "")}
-              onClick={() => setMineSubTab("changes")}
+              onClick={() => handleSetMineSubTab("changes")}
             >
               일시 변경
               {upcomingChangeItems.length > 0 && (
@@ -860,7 +889,7 @@ export default function TimetablePage() {
                       const isSelected =
                         selectedCell?.dayOfWeek === day && selectedCell?.period === period;
                       return (
-                        <td key={day}>
+                        <td key={day} data-day={day}>
                           <button
                             type="button"
                             className={
@@ -1009,7 +1038,7 @@ export default function TimetablePage() {
                             selectedPreviewCell?.dayOfWeek === day &&
                             selectedPreviewCell?.period === period;
                           return (
-                            <td key={day}>
+                            <td key={day} data-day={day}>
                               <button
                                 type="button"
                                 className={
@@ -1562,7 +1591,7 @@ export default function TimetablePage() {
                           const isSelected =
                             hrSelectedCell?.dayOfWeek === day && hrSelectedCell?.period === period;
                           return (
-                            <td key={day}>
+                            <td key={day} data-day={day}>
                               <button
                                 type="button"
                                 className={
@@ -1720,7 +1749,7 @@ export default function TimetablePage() {
                                 hrSelectedPreviewCell?.dayOfWeek === day &&
                                 hrSelectedPreviewCell?.period === period;
                               return (
-                                <td key={day}>
+                                <td key={day} data-day={day}>
                                   <button
                                     type="button"
                                     className={

@@ -21,6 +21,13 @@ export function computeCompletedIdsBefore(planItems, targetPlanItemId) {
   return sorted.slice(0, idx).map((p) => p.id);
 }
 
+// 계획 항목의 estimatedLessons가 "정상"인지 판정한다. 0이나 없는 값은 실수 데이터로
+// 취급한다(기획 원칙 - 정상 계획 차시는 최소 1차시). 기존 잘못된 데이터를 자동으로
+// 1로 보정하지 않고, 이 함수는 오직 판정에만 쓰인다.
+export function isValidEstimatedLessons(value) {
+  return typeof value === "number" && Number.isInteger(value) && value >= 1;
+}
+
 function normalizeTitleForMatch(title) {
   return String(title || "")
     .trim()
@@ -53,5 +60,10 @@ export function historyEntriesEqual(a, b) {
   if (!a || !b) return false;
   const idsA = [...(a.completedPlanItemIds || [])].sort().join(",");
   const idsB = [...(b.completedPlanItemIds || [])].sort().join(",");
-  return idsA === idsB && (a.planItemId || null) === (b.planItemId || null) && (a.detail || "") === (b.detail || "");
+  return (
+    idsA === idsB &&
+    (a.planItemId || null) === (b.planItemId || null) &&
+    (a.detail || "") === (b.detail || "") &&
+    (a.lessonsCompletedInItem ?? null) === (b.lessonsCompletedInItem ?? null)
+  );
 }

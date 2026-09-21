@@ -24,6 +24,7 @@ import {
   computeCompletedIdsBefore,
   findPlanItemByTitle,
   historyEntriesEqual,
+  isValidEstimatedLessons,
 } from "../utils/progressStatusUpdate";
 
 const MAX_RESULTS = 15;
@@ -443,20 +444,45 @@ async function execGetProgressStatus(args, uid) {
     }
   }
 
+  // 계획 자체에 estimatedLessons가 없거나 0인 항목(정상 데이터가 아님)은 학급별 결과와
+  // 별개로 한 번만 모아 돌려준다 - AI가 "이 계획의 차시 수를 확인해 달라"고 안내할 수
+  // 있게 하기 위해서다. 잘못된 값을 여기서 임의로 보정하지 않는다.
+  const invalidEstimatedLessonsItems = planItems
+    .filter((p) => !isValidEstimatedLessons(p.estimatedLessons))
+    .map((p) => p.title);
+
   const results = targetClasses.map((className) => {
     const checkedIds = checks
       .filter((c) => isSameClass(c.className, className) && planItemIds.has(c.planItemId) && c.completed)
       .map((c) => c.planItemId);
     const stats = analyzeClassProgress(planItems, checkedIds);
     const current = currents.find((c) => isSameClass(c.className, className) && planItemIds.has(c.planItemId));
+    const currentPlanItem = current ? planItems.find((p) => p.id === current.planItemId) : null;
     return {
       className,
       displayClassName: formatClassName(className),
       completedThrough: stats.currentItem?.title ?? null,
+      completedThroughEstimatedLessons: isValidEstimatedLessons(stats.currentItem?.estimatedLessons)
+        ? stats.currentItem.estimatedLessons
+        : null,
       nextPlanItem: stats.nextItem?.title ?? null,
-      inProgress: current ? { planItemTitle: current.planItemTitle, detail: current.detail || null } : null,
+      nextPlanItemEstimatedLessons: isValidEstimatedLessons(stats.nextItem?.estimatedLessons)
+        ? stats.nextItem.estimatedLessons
+        : null,
+      inProgress: current
+        ? {
+            planItemTitle: current.planItemTitle,
+            detail: current.detail || null,
+            lessonsCompletedInItem:
+              typeof current.lessonsCompletedInItem === "number" ? current.lessonsCompletedInItem : null,
+            estimatedLessons: isValidEstimatedLessons(currentPlanItem?.estimatedLessons)
+              ? currentPlanItem.estimatedLessons
+              : null,
+          }
+        : null,
       remainingPlanItems: stats.remainingPlanItems,
       totalItems: stats.totalItems,
+      estimatedRemainingLessons: stats.estimatedRemainingLessons,
       consecutivePosition: stats.consecutivePosition,
     };
   });
@@ -472,6 +498,7 @@ async function execGetProgressStatus(args, uid) {
     grade: args.grade,
     classes: results.map(({ consecutivePosition: _consecutivePosition, ...rest }) => rest),
     comparisonMessages: comparison.messages.map((m) => m.text),
+    invalidEstimatedLessonsItems,
   };
 }
 
@@ -505,6 +532,47 @@ async function syncChecksToCompletedIds(uid, planItems, className, completedIds,
       });
     }
   }
+}
+
+// completedThroughTitle 경로와, 부분 진행(lessonsCompletedInItem)이 계획 차시(estimatedLessons)와
+// 정확히 같아져서(m===n) 전체 완료로 전환되는 경로가 완전히 같은 "완료 처리"를 공유한다 -
+// 두 곳에 같은 로직을 복제하지 않는다.
+async function completeProgressThrough({
+  uid,
+  className,
+  grade,
+  planItems,
+  checks,
+  item,
+  existingCurrent,
+  detail,
+  lastClassDate,
+  now,
+  latestHistory,
+}) {
+  const completedIds = computeCompletedIdsThrough(planItems, item.id);
+  await syncChecksToCompletedIds(uid, planItems, className, completedIds, checks, now);
+
+  if (existingCurrent) {
+    await deleteDocById("progress_current", existingCurrent.id);
+  }
+
+  const newHistory = { planItemId: item.id, detail: detail ?? null, completedPlanItemIds: completedIds };
+  if (!historyEntriesEqual(latestHistory, newHistory)) {
+    await createDoc("progress_history", uid, {
+      className,
+      grade,
+      date: lastClassDate,
+      planItemId: item.id,
+      planItemTitle: item.title,
+      detail: detail ?? null,
+      completedPlanItemIds: completedIds,
+      source: "ai",
+      createdAt: now,
+    });
+  }
+
+  return { success: true, className, displayClassName: formatClassName(className), completedThrough: item.title };
 }
 
 async function execUpdateProgressStatus(args, uid) {
@@ -554,29 +622,19 @@ async function execUpdateProgressStatus(args, uid) {
       };
     }
 
-    const completedIds = computeCompletedIdsThrough(planItems, item.id);
-    await syncChecksToCompletedIds(uid, planItems, className, completedIds, checks, now);
-
-    if (existingCurrent) {
-      await deleteDocById("progress_current", existingCurrent.id);
-    }
-
-    const newHistory = { planItemId: item.id, detail: null, completedPlanItemIds: completedIds };
-    if (!historyEntriesEqual(latestHistory, newHistory)) {
-      await createDoc("progress_history", uid, {
-        className,
-        grade,
-        date: lastClassDate,
-        planItemId: item.id,
-        planItemTitle: item.title,
-        detail: null,
-        completedPlanItemIds: completedIds,
-        source: "ai",
-        createdAt: now,
-      });
-    }
-
-    return { success: true, className, displayClassName: formatClassName(className), completedThrough: item.title };
+    return completeProgressThrough({
+      uid,
+      className,
+      grade,
+      planItems,
+      checks,
+      item,
+      existingCurrent,
+      detail: null,
+      lastClassDate,
+      now,
+      latestHistory,
+    });
   }
 
   // "~의 일부까지 했어" - 그 이전 항목까지만 완료 처리하고, 이 항목은 진행 중으로 기록한다.
@@ -589,32 +647,74 @@ async function execUpdateProgressStatus(args, uid) {
     };
   }
 
+  const detail = args.detail || "";
+  const lessonsCompletedInItem = args.lessonsCompletedInItem;
+
+  // 차시 숫자가 함께 왔으면 반드시 이 항목의 실제 계획 차시(estimatedLessons)와 대조한다 -
+  // Gemini가 이미 스스로 확인했더라도 여기서 다시 방어적으로 검증하고, 벗어나면 그대로
+  // 저장하지 않는다(4로 자동 보정하지도, 5를 그대로 저장하지도 않는다).
+  if (typeof lessonsCompletedInItem === "number") {
+    if (!isValidEstimatedLessons(item.estimatedLessons)) {
+      return {
+        success: false,
+        reason: `'${item.title}' 항목은 계획 차시(estimatedLessons)가 올바르게 설정되어 있지 않아 차시 진행을 기록할 수 없습니다. 진도 페이지에서 이 항목의 차시 수를 먼저 확인해 주세요.`,
+      };
+    }
+    if (lessonsCompletedInItem < 1) {
+      return { success: false, reason: "진행한 차시는 1 이상이어야 합니다." };
+    }
+    if (lessonsCompletedInItem > item.estimatedLessons) {
+      return {
+        success: false,
+        reason: `'${item.title}'은 계획상 ${item.estimatedLessons}차시입니다. ${lessonsCompletedInItem}차시는 계획보다 많으므로 저장하지 않았습니다 - 차시 수를 다시 확인해 주세요.`,
+      };
+    }
+    if (lessonsCompletedInItem === item.estimatedLessons) {
+      // m/n에서 m===n이면 부분 진행이 아니라 그 항목 전체 완료다 - 완료 로직을 그대로 재사용한다.
+      return completeProgressThrough({
+        uid,
+        className,
+        grade,
+        planItems,
+        checks,
+        item,
+        existingCurrent,
+        detail: detail || null,
+        lastClassDate,
+        now,
+        latestHistory,
+      });
+    }
+  }
+
   const completedIds = computeCompletedIdsBefore(planItems, item.id);
   await syncChecksToCompletedIds(uid, planItems, className, completedIds, checks, now);
 
-  const detail = args.detail || "";
+  // lessonsCompletedInItem을 명시적으로 null로 써서(생략하지 않고) 이전에 다른 항목에
+  // 기록됐던 차시 값이 이번 진행 중 항목에 그대로 남아 있지 않게 한다 - updateDoc은
+  // 병합(merge) 방식이라 필드를 아예 빼면 예전 값이 지워지지 않고 남는다.
+  const normalizedLessons = typeof lessonsCompletedInItem === "number" ? lessonsCompletedInItem : null;
+  const currentPayload = {
+    planItemId: item.id,
+    planItemTitle: item.title,
+    detail,
+    lessonsCompletedInItem: normalizedLessons,
+    updatedAt: now,
+    lastClassDate,
+  };
+
   if (existingCurrent) {
-    await updateDocById("progress_current", existingCurrent.id, {
-      planItemId: item.id,
-      planItemTitle: item.title,
-      detail,
-      updatedAt: now,
-      lastClassDate,
-    });
+    await updateDocById("progress_current", existingCurrent.id, currentPayload);
   } else {
-    await createDoc("progress_current", uid, {
-      className,
-      grade,
-      planItemId: item.id,
-      planItemTitle: item.title,
-      detail,
-      updatedAt: now,
-      lastClassDate,
-      createdAt: now,
-    });
+    await createDoc("progress_current", uid, { className, grade, ...currentPayload, createdAt: now });
   }
 
-  const newHistory = { planItemId: item.id, detail, completedPlanItemIds: completedIds };
+  const newHistory = {
+    planItemId: item.id,
+    detail,
+    completedPlanItemIds: completedIds,
+    lessonsCompletedInItem: normalizedLessons,
+  };
   if (!historyEntriesEqual(latestHistory, newHistory)) {
     await createDoc("progress_history", uid, {
       className,
@@ -624,12 +724,20 @@ async function execUpdateProgressStatus(args, uid) {
       planItemTitle: item.title,
       detail,
       completedPlanItemIds: completedIds,
+      lessonsCompletedInItem: normalizedLessons,
       source: "ai",
       createdAt: now,
     });
   }
 
-  return { success: true, className, displayClassName: formatClassName(className), currentItem: item.title, detail };
+  return {
+    success: true,
+    className,
+    displayClassName: formatClassName(className),
+    currentItem: item.title,
+    detail,
+    lessonsCompletedInItem: normalizedLessons,
+  };
 }
 
 async function execGetProgressHistory(args, uid) {
@@ -659,6 +767,7 @@ async function execGetProgressHistory(args, uid) {
       lessonDate: h.date,
       planItemTitle: h.planItemTitle,
       detail: h.detail || null,
+      lessonsCompletedInItem: h.lessonsCompletedInItem ?? null,
     })),
   };
 }

@@ -17,7 +17,8 @@ import {
   deriveUpcomingTasks,
 } from "../utils/briefingDerive";
 import { eventTypeDisplayLabel } from "../utils/constants";
-import { formatClassName } from "../utils/progressComparison";
+import { formatClassName, gradeOfClassName, isSameClass, analyzeClassProgress } from "../utils/progressComparison";
+import { isValidEstimatedLessons } from "../utils/progressStatusUpdate";
 import BriefingSection from "../components/BriefingSection";
 import HomeQuickAssistant from "../components/HomeQuickAssistant";
 import "./Home.css";
@@ -69,6 +70,9 @@ export default function Home() {
           listDocsByOwner("tasks", user.uid),
           listDocsByOwner("lesson_plan", user.uid),
           getClassProgress(user.uid),
+          listDocsByOwner("progress_plans", user.uid),
+          listDocsByOwner("progress_checks", user.uid),
+          listDocsByOwner("progress_current", user.uid),
         ]);
 
         if (cancelled) return;
@@ -83,6 +87,9 @@ export default function Home() {
           results[6],
           "getClassProgress"
         );
+        const { value: progressPlans, failed: progressPlansFailed } = unwrap(results[7], "progress_plans");
+        const { value: progressChecks, failed: progressChecksFailed } = unwrap(results[8], "progress_checks");
+        const { value: progressCurrents, failed: progressCurrentsFailed } = unwrap(results[9], "progress_current");
 
         const today = todayDateString();
 
@@ -97,6 +104,50 @@ export default function Home() {
               schoolDaySchedules,
             });
         const baseTimetable = todayEffective.periods.filter((p) => p.className && !p.excludedByAcademicSchedule);
+
+        // 오늘 수업마다 현재 진도를 붙여 보여준다. 학급마다 Firestore를 따로 조회하지
+        // 않는다 - progress_plans/progress_checks/progress_current를 이미 위에서 한 번씩만
+        // 읽었고, 여기서는 그 결과를 메모리에서 학급별로 계산만 한다(N+1 금지).
+        const classProgressDataFailed =
+          progressPlansFailed || progressChecksFailed || progressCurrentsFailed;
+        const classChipByName = new Map();
+        if (!classProgressDataFailed) {
+          const [py, pmRaw] = today.split("-");
+          const pm = String(Number(pmRaw));
+          const distinctClassNames = [...new Set(baseTimetable.map((p) => p.className).filter(Boolean))];
+
+          for (const className of distinctClassNames) {
+            const grade = gradeOfClassName(className);
+            const planItemsForMonth = progressPlans
+              .filter((p) => p.grade === grade && String(p.year) === py && String(p.month) === pm)
+              .sort((a, b) => a.order - b.order);
+            if (planItemsForMonth.length === 0) continue;
+
+            const current = progressCurrents.find(
+              (c) => isSameClass(c.className, className) && planItemsForMonth.some((p) => p.id === c.planItemId)
+            );
+            if (current) {
+              const planItem = planItemsForMonth.find((p) => p.id === current.planItemId);
+              const lessonsSuffix =
+                typeof current.lessonsCompletedInItem === "number" && isValidEstimatedLessons(planItem?.estimatedLessons)
+                  ? ` · ${current.lessonsCompletedInItem}/${planItem.estimatedLessons}차시`
+                  : "";
+              classChipByName.set(className, { kind: "current", text: `${current.planItemTitle}${lessonsSuffix}` });
+              continue;
+            }
+
+            const checkedIds = progressChecks
+              .filter(
+                (c) =>
+                  isSameClass(c.className, className) && c.completed && planItemsForMonth.some((p) => p.id === c.planItemId)
+              )
+              .map((c) => c.planItemId);
+            const stats = analyzeClassProgress(planItemsForMonth, checkedIds);
+            if (stats.currentItem) {
+              classChipByName.set(className, { kind: "done", text: stats.currentItem.title });
+            }
+          }
+        }
         const todayHasTimetableChange =
           !timetableFailed &&
           !overridesFailed &&
@@ -111,6 +162,7 @@ export default function Home() {
         setData({
           baseTimetable,
           timetableFailed,
+          classChipByName,
           todayHasTimetableChange,
           meetings: todayEvents.filter((e) => e.type !== "personal"),
           personalEvents: todayEvents.filter((e) => e.type === "personal"),
@@ -264,13 +316,19 @@ export default function Home() {
                 failed={data.timetableFailed}
                 hideWhenEmpty
                 emptyText=""
-                renderItem={(t) => (
-                  <>
-                    <span className="home-row-period">{t.period}교시</span>
-                    {formatClassName(t.className)} — {t.subject}
-                    {t.isOverride && <span className="home-badge home-badge--change">변경</span>}
-                  </>
-                )}
+                renderItem={(t) => {
+                  const chip = data.classChipByName?.get(t.className);
+                  return (
+                    <>
+                      <span className="home-row-period">{t.period}교시</span>
+                      {formatClassName(t.className)} — {t.subject}
+                      {t.isOverride && <span className="home-badge home-badge--change">변경</span>}
+                      <div className="home-class-progress">
+                        {chip ? `${chip.kind === "current" ? "◐" : "✓"} ${chip.text}` : "진도 기록 없음"}
+                      </div>
+                    </>
+                  );
+                }}
               />
             </div>
           )}

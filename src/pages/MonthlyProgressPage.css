@@ -298,6 +298,43 @@
   gap: 4px;
 }
 
+/* ===== "진행 중" 편집의 진행 차시 입력 - 계획 편집의 차시 입력(.pp-plan-edit__lessons)과
+   같은 톤으로 맞춘다 ===== */
+.pp-lessons-input {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--border-soft);
+  background: var(--bg-card);
+  border-radius: 10px;
+  padding: 6px 10px;
+}
+
+.pp-lessons-input:focus-within {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.pp-lessons-input input {
+  width: 40px;
+  border: none;
+  background: transparent;
+  padding: 0;
+  font-size: 13.5px;
+  color: var(--text-primary);
+  text-align: right;
+}
+
+.pp-lessons-input input:focus-visible {
+  outline: none;
+}
+
+.pp-lessons-input__suffix {
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
 .pp-plan-edit__btn {
   width: 28px;
   height: 28px;

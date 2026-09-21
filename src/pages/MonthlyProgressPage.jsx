@@ -20,7 +20,12 @@ import {
   formatClassShortName,
 } from "../utils/progressComparison";
 import { calculateRemainingLessons } from "../utils/remainingLessons";
-import { computeCompletedIdsBefore, historyEntriesEqual } from "../utils/progressStatusUpdate";
+import {
+  computeCompletedIdsThrough,
+  computeCompletedIdsBefore,
+  historyEntriesEqual,
+  isValidEstimatedLessons,
+} from "../utils/progressStatusUpdate";
 import { useFieldErrors, isBlank, isValidNumberList } from "../utils/formValidation";
 import FieldError from "../components/FieldError";
 import "./crud-shared.css";
@@ -224,6 +229,7 @@ export default function MonthlyProgressPage() {
   // ===== 월별 진도계획 빠른 입력 =====
   const [draftItems, setDraftItems] = useState([]);
   const [savingPlan, setSavingPlan] = useState(false);
+  const [planSaveError, setPlanSaveError] = useState(null);
 
   useEffect(() => {
     setDraftItems(
@@ -265,6 +271,17 @@ export default function MonthlyProgressPage() {
 
   async function savePlanItems() {
     if (!user) return;
+    // 정상적인 계획 차시는 최소 1차시다 - 신규 입력에만 적용하고, 기존 Firestore에 이미
+    // 남아 있는 0/빈 값은 여기서 강제로 고치지 않는다(그 값을 그대로 두고 저장을 막지도
+    // 않는다 - 아래 검증은 "이번에 입력/수정한 값"에만 적용된다).
+    const invalidRow = draftItems.find(
+      (r) => r.title.trim() && r.estimatedLessons !== "" && !isValidEstimatedLessons(Number(r.estimatedLessons))
+    );
+    if (invalidRow) {
+      setPlanSaveError("차시는 1 이상의 정수만 입력할 수 있습니다.");
+      return;
+    }
+    setPlanSaveError(null);
     setSavingPlan(true);
     try {
       const now = new Date().toISOString();
@@ -314,6 +331,7 @@ export default function MonthlyProgressPage() {
         _key: p.id,
       }))
     );
+    setPlanSaveError(null);
     setIsEditingPlan(false);
   }
 
@@ -424,18 +442,57 @@ export default function MonthlyProgressPage() {
   // 재사용한다 - computeCompletedIdsBefore로 이전 항목까지 완료 처리하고, 선택한 항목
   // 자체는 진행 중으로 progress_current에 기록한다. UI와 AI가 같은 결과를 내도록 한다.) =====
   const [currentEditFor, setCurrentEditFor] = useState(null); // 편집 중인 className
-  const [currentEditForm, setCurrentEditForm] = useState({ planItemId: "", detail: "" });
+  const [currentEditForm, setCurrentEditForm] = useState({ planItemId: "", detail: "", lessonsCompletedInItem: "" });
   const [savingCurrent, setSavingCurrent] = useState(false);
+  const [currentEditError, setCurrentEditError] = useState(null);
 
   function openCurrentEditor(className) {
     const existing = currents.find((c) => isSameClass(c.className, className));
     setCurrentEditFor(className);
-    setCurrentEditForm({ planItemId: existing?.planItemId || "", detail: existing?.detail || "" });
+    setCurrentEditForm({
+      planItemId: existing?.planItemId || "",
+      detail: existing?.detail || "",
+      lessonsCompletedInItem:
+        typeof existing?.lessonsCompletedInItem === "number" ? String(existing.lessonsCompletedInItem) : "",
+    });
+    setCurrentEditError(null);
   }
 
   function closeCurrentEditor() {
     setCurrentEditFor(null);
-    setCurrentEditForm({ planItemId: "", detail: "" });
+    setCurrentEditForm({ planItemId: "", detail: "", lessonsCompletedInItem: "" });
+    setCurrentEditError(null);
+  }
+
+  // toggleCheck/saveCurrentProgress/AI(updateProgressStatus)가 모두 같은 규칙으로
+  // progress_checks를 동기화해야 한다 - completedIds 집합과 정확히 일치시킨다.
+  async function syncClassChecksToIds(className, completedIds, now) {
+    for (const p of planItems) {
+      const shouldBeCompleted = completedIds.includes(p.id);
+      const existingCheck = checksForPlan.find(
+        (c) => c.planItemId === p.id && isSameClass(c.className, className)
+      );
+      if (existingCheck) {
+        if (!!existingCheck.completed !== shouldBeCompleted) {
+          // eslint-disable-next-line no-await-in-loop
+          await updateDocById("progress_checks", existingCheck.id, {
+            completed: shouldBeCompleted,
+            completedAt: shouldBeCompleted ? now : null,
+            updatedAt: now,
+          });
+        }
+      } else if (shouldBeCompleted) {
+        // eslint-disable-next-line no-await-in-loop
+        await createDoc("progress_checks", user.uid, {
+          planItemId: p.id,
+          className,
+          completed: true,
+          completedAt: now,
+          createdAt: now,
+          updatedAt: now,
+        });
+      }
+    }
   }
 
   async function saveCurrentProgress(className) {
@@ -443,64 +500,101 @@ export default function MonthlyProgressPage() {
     const targetItem = planItems.find((p) => p.id === currentEditForm.planItemId);
     if (!targetItem) return;
 
+    // 차시 숫자는 AI(updateProgressStatus)와 정확히 같은 규칙으로 검증한다: 계획
+    // 차시(estimatedLessons)가 없으면 저장하지 않고, 계획보다 큰 값도 자동 보정하지 않고
+    // 그대로 거부한다.
+    const raw = currentEditForm.lessonsCompletedInItem;
+    let lessonsCompletedInItem = null;
+    if (raw !== "" && raw != null) {
+      const n = Number(raw);
+      if (!Number.isInteger(n) || n < 1) {
+        setCurrentEditError("진행 차시는 1 이상의 정수로 입력해 주세요.");
+        return;
+      }
+      if (!isValidEstimatedLessons(targetItem.estimatedLessons)) {
+        setCurrentEditError("이 항목은 계획 차시(차시 수)가 설정되어 있지 않습니다. 위 진도계획에서 먼저 입력해 주세요.");
+        return;
+      }
+      if (n > targetItem.estimatedLessons) {
+        setCurrentEditError(`이 항목은 계획상 ${targetItem.estimatedLessons}차시입니다. 입력한 차시가 더 많습니다 - 확인해 주세요.`);
+        return;
+      }
+      lessonsCompletedInItem = n;
+    }
+    setCurrentEditError(null);
+
+    const now = new Date().toISOString();
+    const lastClassDate = todayDateString();
+    const detail = currentEditForm.detail || "";
+
     setSavingCurrent(true);
     try {
-      const completedIds = computeCompletedIdsBefore(planItems, targetItem.id) || [];
-      const now = new Date().toISOString();
-      const lastClassDate = todayDateString();
-      const detail = currentEditForm.detail || "";
+      // m/n에서 m===n이면 부분 진행이 아니라 이 항목 전체 완료다 - AI와 동일하게 완료
+      // 처리(computeCompletedIdsThrough)로 연결하고, "진행 중" 표시는 만들지 않는다.
+      if (lessonsCompletedInItem != null && lessonsCompletedInItem === targetItem.estimatedLessons) {
+        const completedIds = computeCompletedIdsThrough(planItems, targetItem.id);
+        await syncClassChecksToIds(className, completedIds, now);
 
-      for (const p of planItems) {
-        const shouldBeCompleted = completedIds.includes(p.id);
-        const existingCheck = checksForPlan.find(
-          (c) => c.planItemId === p.id && isSameClass(c.className, className)
-        );
-        if (existingCheck) {
-          if (!!existingCheck.completed !== shouldBeCompleted) {
-            // eslint-disable-next-line no-await-in-loop
-            await updateDocById("progress_checks", existingCheck.id, {
-              completed: shouldBeCompleted,
-              completedAt: shouldBeCompleted ? now : null,
-              updatedAt: now,
-            });
-          }
-        } else if (shouldBeCompleted) {
-          // eslint-disable-next-line no-await-in-loop
-          await createDoc("progress_checks", user.uid, {
-            planItemId: p.id,
+        const existingCurrent = currents.find((c) => isSameClass(c.className, className));
+        if (existingCurrent) {
+          await deleteDocById("progress_current", existingCurrent.id);
+        }
+
+        const latestHistory = (historyByClass[className] || [])[0] || null;
+        const newHistory = {
+          planItemId: targetItem.id,
+          detail: detail || null,
+          completedPlanItemIds: completedIds,
+          lessonsCompletedInItem: null,
+        };
+        if (!historyEntriesEqual(latestHistory, newHistory)) {
+          await createDoc("progress_history", user.uid, {
             className,
-            completed: true,
-            completedAt: now,
+            grade,
+            date: lastClassDate,
+            planItemId: targetItem.id,
+            planItemTitle: targetItem.title,
+            detail: detail || null,
+            completedPlanItemIds: completedIds,
+            source: "manual",
             createdAt: now,
-            updatedAt: now,
+          });
+          setHistoryByClass((prev) => {
+            const next = { ...prev };
+            delete next[className];
+            return next;
           });
         }
+
+        closeCurrentEditor();
+        reloadChecks();
+        reloadCurrents();
+        return;
       }
 
+      const completedIds = computeCompletedIdsBefore(planItems, targetItem.id) || [];
+      await syncClassChecksToIds(className, completedIds, now);
+
+      // lessonsCompletedInItem을 명시적으로 null로 써서, 이전에 다른 항목을 진행하며
+      // 기록됐던 차시 값이 이번 항목에 그대로 남아 있지 않게 한다(updateDoc은 병합
+      // 방식이라 필드를 아예 빼면 예전 값이 지워지지 않는다).
       const existingCurrent = currents.find((c) => isSameClass(c.className, className));
+      const currentPayload = {
+        planItemId: targetItem.id,
+        planItemTitle: targetItem.title,
+        detail,
+        lessonsCompletedInItem,
+        updatedAt: now,
+        lastClassDate,
+      };
       if (existingCurrent) {
-        await updateDocById("progress_current", existingCurrent.id, {
-          planItemId: targetItem.id,
-          planItemTitle: targetItem.title,
-          detail,
-          updatedAt: now,
-          lastClassDate,
-        });
+        await updateDocById("progress_current", existingCurrent.id, currentPayload);
       } else {
-        await createDoc("progress_current", user.uid, {
-          className,
-          grade,
-          planItemId: targetItem.id,
-          planItemTitle: targetItem.title,
-          detail,
-          updatedAt: now,
-          lastClassDate,
-          createdAt: now,
-        });
+        await createDoc("progress_current", user.uid, { className, grade, ...currentPayload, createdAt: now });
       }
 
       const latestHistory = (historyByClass[className] || [])[0] || null;
-      const newHistory = { planItemId: targetItem.id, detail, completedPlanItemIds: completedIds };
+      const newHistory = { planItemId: targetItem.id, detail, completedPlanItemIds: completedIds, lessonsCompletedInItem };
       if (!historyEntriesEqual(latestHistory, newHistory)) {
         await createDoc("progress_history", user.uid, {
           className,
@@ -510,6 +604,7 @@ export default function MonthlyProgressPage() {
           planItemTitle: targetItem.title,
           detail,
           completedPlanItemIds: completedIds,
+          lessonsCompletedInItem,
           source: "manual",
           createdAt: now,
         });
@@ -941,14 +1036,42 @@ export default function MonthlyProgressPage() {
 
   // ===== 탭 UI =====
   // "manage" = 진도 관리, "remaining" = 남은 수업, "schedule" = 학사일정.
-  // 탭 전환은 activeTab만 바꾸는 순수 화면 상태다. Firestore 재조회나 기존 state 초기화를
-  // 하지 않고(학년/연도/월 선택, 입력 중인 폼 상태 등 그대로 유지), 자동 스크롤도 하지
-  // 않는다 - 사용자가 보던 스크롤 위치를 그대로 둔다.
+  // 탭 전환은 Firestore를 다시 불러오지 않고, 학년/연도/월 선택이나 accordion 펼침
+  // 상태처럼 "탭과 무관한" 화면 상태도 그대로 유지한다. 다만 "편집 대상과 강하게 연결된"
+  // 임시 state(진도계획 편집 모드, 진행 중 편집, 최근 기록 편집/삭제확인, 학사일정
+  // 수정 폼, 수동 보정 수정 폼)는 다른 탭으로 넘어가면 그 자리에서 계속 열려 있는 게
+  // 오히려 혼란스러워서, 탭을 바꿀 때 함께 정리한다(아래 handleSetActiveTab/
+  // handleSetMainTab). 자동 스크롤은 하지 않는다 - 사용자가 보던 스크롤 위치는 그대로 둔다.
   const [activeTab, setActiveTab] = useState("manage");
   // 큰 탭: "progress"(진도 관리) | "schedule"(학사일정). 기존 activeTab("manage"/"remaining"/
   // "schedule")은 그대로 두고, "progress" 안에서 activeTab이 "manage"/"remaining"을 작은
   // 탭으로 계속 쓴다 - "schedule"일 때는 mainTab이 그 화면을 직접 담당한다.
   const [mainTab, setMainTab] = useState("progress");
+
+  // "편집 대상과 강하게 연결된" state만 정리한다 - 작성 중인 새 데이터 draft(학사일정
+  // "직접 추가" form, 수동 보정 "추가" form, showAdjustmentForm/showDirectScheduleForm,
+  // 학사일정 분석 candidates)는 절대 여기서 지우지 않는다.
+  function resetProgressEditState() {
+    cancelEditPlan();
+    closeCurrentEditor();
+    cancelEditHistory();
+    setConfirmDeleteHistoryId(null);
+  }
+
+  function handleSetActiveTab(tab) {
+    resetProgressEditState();
+    setActiveTab(tab);
+  }
+
+  function handleSetMainTab(tab) {
+    resetProgressEditState();
+    // resetScheduleForm/cancelEditAdjustment는 "기존 항목 수정" 상태만 지운다 - "새 일정
+    // 직접 추가"(showDirectScheduleForm)나 "새 보정 추가"(showAdjustmentForm) draft는 각각
+    // 별도 state라 여기서 건드리지 않는다.
+    if (editingScheduleId) resetScheduleForm();
+    cancelEditAdjustment();
+    setMainTab(tab);
+  }
   // 반별 진도 현황 accordion - 펼쳐진 학급 집합. 순수 로컬 UI state이고 저장하지 않는다.
   const [expandedProgressClasses, setExpandedProgressClasses] = useState(() => new Set());
   function toggleProgressClassExpanded(className) {
@@ -1200,7 +1323,7 @@ export default function MonthlyProgressPage() {
           role="tab"
           aria-selected={mainTab === "progress"}
           className={"pp-main-tabs__btn" + (mainTab === "progress" ? " pp-main-tabs__btn--active" : "")}
-          onClick={() => setMainTab("progress")}
+          onClick={() => handleSetMainTab("progress")}
         >
           진도 관리
         </button>
@@ -1209,7 +1332,7 @@ export default function MonthlyProgressPage() {
           role="tab"
           aria-selected={mainTab === "schedule"}
           className={"pp-main-tabs__btn" + (mainTab === "schedule" ? " pp-main-tabs__btn--active" : "")}
-          onClick={() => setMainTab("schedule")}
+          onClick={() => handleSetMainTab("schedule")}
         >
           학사일정
           {allNeedsReview.length > 0 && <span className="tt-tabs__badge">{allNeedsReview.length}</span>}
@@ -1257,7 +1380,7 @@ export default function MonthlyProgressPage() {
               role="tab"
               aria-selected={activeTab === "manage"}
               className={"tt-tabs__btn" + (activeTab === "manage" ? " tt-tabs__btn--active" : "")}
-              onClick={() => setActiveTab("manage")}
+              onClick={() => handleSetActiveTab("manage")}
             >
               진도 현황
             </button>
@@ -1266,7 +1389,7 @@ export default function MonthlyProgressPage() {
               role="tab"
               aria-selected={activeTab === "remaining"}
               className={"tt-tabs__btn" + (activeTab === "remaining" ? " tt-tabs__btn--active" : "")}
-              onClick={() => setActiveTab("remaining")}
+              onClick={() => handleSetActiveTab("remaining")}
             >
               남은 수업
             </button>
@@ -1323,7 +1446,7 @@ export default function MonthlyProgressPage() {
                       <span className="pp-plan-edit__lessons">
                         <input
                           type="number"
-                          min="0"
+                          min="1"
                           value={row.estimatedLessons}
                           onChange={(e) => updateDraftRow(row._key, { estimatedLessons: e.target.value })}
                           aria-label="차시"
@@ -1361,6 +1484,7 @@ export default function MonthlyProgressPage() {
                   ))}
                   {draftItems.length === 0 && <p className="list--empty">등록된 진도 항목이 없습니다.</p>}
                 </div>
+                {planSaveError && <p className="status status--error">{planSaveError}</p>}
                 <div className="form__actions" style={{ marginTop: 12 }}>
                   <button className="btn btn--ghost" type="button" onClick={addDraftRow}>
                     + 항목 추가
@@ -1448,11 +1572,22 @@ export default function MonthlyProgressPage() {
                 {progressByClass.map(({ className, stats }) => {
                   const gapMsg = comparison.messages.find((m) => isSameClass(m.className, className));
                   const current = currents.find((c) => isSameClass(c.className, className));
+                  // 진행 중 항목 자체의 계획 차시 - progress_current에는 절대 복제 저장하지
+                  // 않고, 항상 progress_plans(source of truth)에서 그때그때 찾는다.
+                  const currentPlanItem = current ? planItems.find((p) => p.id === current.planItemId) : null;
+                  const currentLessonsSuffix =
+                    typeof current?.lessonsCompletedInItem === "number" &&
+                    isValidEstimatedLessons(currentPlanItem?.estimatedLessons)
+                      ? ` (${current.lessonsCompletedInItem}/${currentPlanItem.estimatedLessons}차시)`
+                      : "";
                   const isEditingCurrent = currentEditFor === className;
                   const remainingItemsForClass = planItems.filter((p) => !isChecked(p.id, className));
+                  const selectedCurrentEditItem = isEditingCurrent
+                    ? planItems.find((p) => p.id === currentEditForm.planItemId)
+                    : null;
                   const expanded = expandedProgressClasses.has(className);
                   const statusLabel = current
-                    ? `${current.planItemTitle} 진행 중`
+                    ? `${current.planItemTitle} 진행 중${currentLessonsSuffix}`
                     : stats.currentItem
                     ? `${stats.currentItem.title} 완료`
                     : "시작 전";
@@ -1491,6 +1626,7 @@ export default function MonthlyProgressPage() {
                             <p className="list__meta" style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                               <span>
                                 <ProgressIcon /> 진행 중: {current.planItemTitle}
+                                {currentLessonsSuffix}
                                 {current.detail && ` — "${current.detail}"`}
                               </span>
                               <button
@@ -1526,7 +1662,13 @@ export default function MonthlyProgressPage() {
                                 <label>진행 중인 항목</label>
                                 <select
                                   value={currentEditForm.planItemId}
-                                  onChange={(e) => setCurrentEditForm({ ...currentEditForm, planItemId: e.target.value })}
+                                  onChange={(e) =>
+                                    setCurrentEditForm({
+                                      ...currentEditForm,
+                                      planItemId: e.target.value,
+                                      lessonsCompletedInItem: "",
+                                    })
+                                  }
                                 >
                                   <option value="">선택</option>
                                   {remainingItemsForClass.map((p) => (
@@ -1536,6 +1678,30 @@ export default function MonthlyProgressPage() {
                                   ))}
                                 </select>
                               </div>
+                              {isValidEstimatedLessons(selectedCurrentEditItem?.estimatedLessons) &&
+                                selectedCurrentEditItem.estimatedLessons >= 2 && (
+                                  <div className="field">
+                                    <label>진행 차시</label>
+                                    <span className="pp-lessons-input">
+                                      <input
+                                        type="number"
+                                        min="1"
+                                        max={selectedCurrentEditItem.estimatedLessons}
+                                        value={currentEditForm.lessonsCompletedInItem}
+                                        onChange={(e) =>
+                                          setCurrentEditForm({
+                                            ...currentEditForm,
+                                            lessonsCompletedInItem: e.target.value,
+                                          })
+                                        }
+                                        aria-label="진행 차시"
+                                      />
+                                      <span className="pp-lessons-input__suffix">
+                                        / {selectedCurrentEditItem.estimatedLessons}차시
+                                      </span>
+                                    </span>
+                                  </div>
+                                )}
                               <div className="field field--grow">
                                 <label>세부 진도</label>
                                 <input
@@ -1566,8 +1732,10 @@ export default function MonthlyProgressPage() {
                                   취소
                                 </button>
                               </div>
+                              {currentEditError && <p className="status status--error">{currentEditError}</p>}
                               <p className="list__meta">
-                                선택한 항목 이전까지는 완료로 처리되고, 선택한 항목은 진행 중으로 기록됩니다.
+                                선택한 항목 이전까지는 완료로 처리되고, 선택한 항목은 진행 중으로 기록됩니다. 입력한
+                                진행 차시가 계획 차시와 같아지면 이 항목은 완료로 처리됩니다.
                               </p>
                             </div>
                           )}
@@ -1678,7 +1846,14 @@ export default function MonthlyProgressPage() {
                                   >
                                     <span>
                                       {formatDateDisplay(h.date)} · {h.planItemTitle}
-                                      {h.detail ? ` — "${h.detail}"` : " 완료"}
+                                      {(() => {
+                                        const histPlanItem = allPlanItems.find((p) => p.id === h.planItemId);
+                                        return typeof h.lessonsCompletedInItem === "number" &&
+                                          isValidEstimatedLessons(histPlanItem?.estimatedLessons)
+                                          ? ` (${h.lessonsCompletedInItem}/${histPlanItem.estimatedLessons}차시)`
+                                          : "";
+                                      })()}
+                                      {h.detail ? ` — "${h.detail}"` : h.lessonsCompletedInItem ? "" : " 완료"}
                                     </span>
                                     <span style={{ display: "flex", gap: 6 }}>
                                       <button

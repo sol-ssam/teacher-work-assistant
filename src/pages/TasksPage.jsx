@@ -134,6 +134,15 @@ export default function TasksPage() {
     editErrors.clearAll();
   }
 
+  // 할 일/완료/전체 필터를 바꾸면 수정 중이던 항목이 새 필터의 visible 목록에서 사라져
+  // 보이지 않게 될 수 있다 - 그 상태로 편집 state만 남아 있다가, 다시 그 필터로 돌아오면
+  // 예전 수정 폼이 그대로 다시 나타났다. 필터를 바꿀 때 기존 cancelEdit()으로 정리한다.
+  // 작성 중인 새 업무 등록 폼(showCreateForm/createForm)은 건드리지 않는다.
+  function handleSetFilter(f) {
+    cancelEdit();
+    setFilter(f);
+  }
+
   async function submitCreate(e) {
     e.preventDefault();
     if (!createErrors.runValidation(validateTaskForm(createForm))) return;
@@ -195,7 +204,7 @@ export default function TasksPage() {
             role="tab"
             aria-selected={filter === "todo"}
             className={"tt-tabs__btn" + (filter === "todo" ? " tt-tabs__btn--active" : "")}
-            onClick={() => setFilter("todo")}
+            onClick={() => handleSetFilter("todo")}
           >
             할 일 {incomplete.length}
           </button>
@@ -204,7 +213,7 @@ export default function TasksPage() {
             role="tab"
             aria-selected={filter === "done"}
             className={"tt-tabs__btn" + (filter === "done" ? " tt-tabs__btn--active" : "")}
-            onClick={() => setFilter("done")}
+            onClick={() => handleSetFilter("done")}
           >
             완료 {completed.length}
           </button>
@@ -213,7 +222,7 @@ export default function TasksPage() {
             role="tab"
             aria-selected={filter === "all"}
             className={"tt-tabs__btn" + (filter === "all" ? " tt-tabs__btn--active" : "")}
-            onClick={() => setFilter("all")}
+            onClick={() => handleSetFilter("all")}
           >
             전체 {tasks.length}
           </button>

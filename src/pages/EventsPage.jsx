@@ -199,6 +199,14 @@ export default function EventsPage() {
   const [error, setError] = useState(null);
   const [filterType, setFilterType] = useState("all");
 
+  // "다가오는 일정" | "지난 일정". 오늘 날짜(Asia/Seoul, todayDateString)를 기준으로
+  // date >= today는 다가오는 일정, date < today는 지난 일정으로 나눈다.
+  const [scopeTab, setScopeTab] = useState("upcoming");
+  // 월별 accordion 펼침 상태 - 다가오는/지난 일정이 서로 다른 월 집합을 펼쳐 둘 수 있어야
+  // 하므로 각자 별도 Set으로 관리한다. 순수 로컬 UI state이고 저장하지 않는다.
+  const [expandedUpcomingMonths, setExpandedUpcomingMonths] = useState(() => new Set());
+  const [expandedPastMonths, setExpandedPastMonths] = useState(() => new Set());
+
   // 신규 등록 전용 state
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [createForm, setCreateForm] = useState(emptyForm);
@@ -279,6 +287,15 @@ export default function EventsPage() {
     setEditForm(emptyForm);
     setEditCalendarWarning(null);
     editErrors.clearAll();
+  }
+
+  // "다가오는 일정"에서 수정 중이던 카드가 "지난 일정" 탭으로 넘어가면 화면에서 사라지는데도
+  // editingId/editForm은 그대로 남아 있어, 탭을 오가면 예전 수정 폼이 다시 나타났다 - 기존
+  // cancelEdit()을 그대로 재사용해 탭을 바꿀 때 정리한다. 새로 작성 중인 등록 폼
+  // (showCreateForm/createForm)은 건드리지 않는다.
+  function handleSetScopeTab(tab) {
+    cancelEdit();
+    setScopeTab(tab);
   }
 
   // 신규 등록/기존 수정이 공유하는 저장 로직. existingEvent가 있으면 그 document를
@@ -402,24 +419,134 @@ export default function EventsPage() {
   }
 
   const visible = filterType === "all" ? events : events.filter((e) => e.type === filterType);
-
-  // 날짜 기준 grouping - Firestore 구조는 그대로 두고 표시할 때만 묶는다.
-  const groups = [];
-  for (const ev of visible) {
-    const last = groups[groups.length - 1];
-    if (last && last.date === ev.date) {
-      last.items.push(ev);
-    } else {
-      groups.push({ date: ev.date, items: [ev] });
-    }
-  }
+  const today = todayDateString();
+  // Asia/Seoul 기준 오늘 날짜(todayDateString)로만 비교한다 - 브라우저 UTC 때문에 날짜가
+  // 하루씩 밀리는 문제를 피하려고 이 프로젝트 전역에서 이미 쓰는 helper를 그대로 쓴다.
+  const upcomingVisible = visible.filter((e) => (e.date || "") >= today);
+  // events는 load()에서 이미 날짜+시간 오름차순으로 정렬되어 있다 - 지난 일정은 그 배열을
+  // 뒤집기만 하면 가장 최근 날짜가 먼저 오는 순서가 된다.
+  const pastVisible = visible.filter((e) => (e.date || "") < today).reverse();
 
   function formatGroupDate(dateStr) {
     if (!dateStr) return "";
-    const isThisYear = dateStr.slice(0, 4) === todayDateString().slice(0, 4);
+    const isThisYear = dateStr.slice(0, 4) === today.slice(0, 4);
     const display = formatDateDisplay(dateStr);
     const withWeekday = `${display}(${weekdayKoreanOf(dateStr)})`;
     return isThisYear ? withWeekday : `${dateStr.slice(0, 4)}년 ${withWeekday}`;
+  }
+
+  // 날짜 기준 grouping (다가오는 일정 카드 - 기존 UI 그대로) - Firestore 구조는 그대로 두고
+  // 표시할 때만 묶는다.
+  function groupByDate(items) {
+    const dateGroups = [];
+    for (const ev of items) {
+      const last = dateGroups[dateGroups.length - 1];
+      if (last && last.date === ev.date) {
+        last.items.push(ev);
+      } else {
+        dateGroups.push({ date: ev.date, items: [ev] });
+      }
+    }
+    return dateGroups;
+  }
+
+  function monthKeyOf(dateStr) {
+    return (dateStr || "").slice(0, 7); // "YYYY-MM"
+  }
+
+  function monthLabelOf(dateStr) {
+    const [y, m] = (dateStr || "").split("-");
+    return y && m ? `${y}년 ${Number(m)}월` : "";
+  }
+
+  // 월별 grouping. Map의 삽입 순서 = 입력 배열의 순서이므로, 다가오는 일정(오름차순 입력)은
+  // 가장 가까운 달이, 지난 일정(내림차순 입력)은 가장 최근 달이 자연스럽게 먼저 온다 -
+  // 별도로 다시 정렬하지 않는다.
+  function groupByMonth(items) {
+    const map = new Map();
+    for (const ev of items) {
+      const key = monthKeyOf(ev.date);
+      if (!map.has(key)) map.set(key, []);
+      map.get(key).push(ev);
+    }
+    return [...map.entries()].map(([key, monthItems]) => ({
+      key,
+      label: monthLabelOf(monthItems[0].date),
+      items: monthItems,
+    }));
+  }
+
+  const upcomingMonthGroups = groupByMonth(upcomingVisible);
+  const pastMonthGroups = groupByMonth(pastVisible);
+
+  // 기본적으로 가장 가까운(다가오는) / 가장 최근(지난) 월만 펼쳐 둔다. 데이터가 로드된
+  // 뒤 이 월 집합이 비어 있을 때만 기본값을 채우고, 그 이후 사용자가 직접 접고 펼치는
+  // 조작은 다시 덮어쓰지 않는다.
+  useEffect(() => {
+    if (upcomingMonthGroups.length > 0 && expandedUpcomingMonths.size === 0) {
+      setExpandedUpcomingMonths(new Set([upcomingMonthGroups[0].key]));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [upcomingMonthGroups.map((g) => g.key).join(",")]);
+
+  useEffect(() => {
+    if (pastMonthGroups.length > 0 && expandedPastMonths.size === 0) {
+      setExpandedPastMonths(new Set([pastMonthGroups[0].key]));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pastMonthGroups.map((g) => g.key).join(",")]);
+
+  function toggleUpcomingMonth(key) {
+    setExpandedUpcomingMonths((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }
+
+  function togglePastMonth(key) {
+    setExpandedPastMonths((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }
+
+  // 지난 일정 compact row용 짧은 날짜 표기("9.18") - 연도는 월 accordion 제목에 이미
+  // 표시되므로 행 안에서는 반복하지 않는다.
+  function shortDate(dateStr) {
+    const [, m, d] = (dateStr || "").split("-");
+    return m && d ? `${Number(m)}.${Number(d)}` : dateStr || "";
+  }
+
+  // 인라인 수정 form - "다가오는 일정"의 큰 카드에서도, "지난 일정"의 compact row에서도
+  // 이 항목이 원래 있던 자리에서 똑같이 열린다(두 곳이 완전히 같은 form을 공유한다).
+  function renderEditForm(ev) {
+    return (
+      <form className="form ep-form ep-form--inline" key={ev.id} onSubmit={submitEdit} noValidate>
+        <EventFormFields
+          values={editForm}
+          onChange={onEditChange}
+          calendarConfigured={calendarConfigured}
+          connected={connected}
+          connecting={connecting}
+          errors={editErrors.errors}
+          registerField={editErrors.registerField}
+          idPrefix="event-edit"
+        />
+        {editCalendarWarning && <p className="status status--error">{editCalendarWarning}</p>}
+        <div className="form__actions">
+          <button type="submit" className="btn" disabled={editSaving}>
+            {editSaving ? "저장 중…" : "저장"}
+          </button>
+          <button type="button" className="btn btn--ghost" onClick={cancelEdit}>
+            취소
+          </button>
+        </div>
+      </form>
+    );
   }
 
   return (
@@ -429,10 +556,39 @@ export default function EventsPage() {
         <p className="page__desc">학교와 개인 일정을 한곳에서 관리해요.</p>
       </header>
 
+      <div className="tt-tabs" role="tablist">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={scopeTab === "upcoming"}
+          className={"tt-tabs__btn" + (scopeTab === "upcoming" ? " tt-tabs__btn--active" : "")}
+          onClick={() => handleSetScopeTab("upcoming")}
+        >
+          다가오는 일정
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={scopeTab === "past"}
+          className={"tt-tabs__btn" + (scopeTab === "past" ? " tt-tabs__btn--active" : "")}
+          onClick={() => handleSetScopeTab("past")}
+        >
+          지난 일정
+        </button>
+      </div>
+
       <div className="ep-toolbar">
         <div className="field">
           <label>구분 필터</label>
-          <select value={filterType} onChange={(e) => setFilterType(e.target.value)}>
+          <select
+            value={filterType}
+            onChange={(e) => {
+              // 구분 필터를 바꿔 수정 중이던 일정이 목록에서 사라지면, 다시 그 구분으로
+              // 돌아왔을 때 예전 수정 폼이 남아 있지 않도록 정리한다(탭 전환과 같은 원칙).
+              cancelEdit();
+              setFilterType(e.target.value);
+            }}
+          >
             <option value="all">전체</option>
             {EVENT_TYPES.map((t) => (
               <option key={t.value} value={t.value}>
@@ -482,70 +638,127 @@ export default function EventsPage() {
           )}
           {createCalendarWarning && <p className="status status--error">{createCalendarWarning}</p>}
 
-          <div className="ep-groups">
-            {groups.length === 0 && <p className="list--empty">등록된 일정이 없습니다.</p>}
-            {groups.map((group) => (
-              <section className="ep-group" key={group.date}>
-                <h2 className="ep-group__date">{formatGroupDate(group.date)}</h2>
-                <div className="ep-list">
-                  {group.items.map((ev) =>
-                    editingId === ev.id ? (
-                      // 이 일정이 원래 있던 바로 그 자리에서 수정 form으로 전환된다 -
-                      // 페이지 상단으로 이동하지 않는다.
-                      <form className="form ep-form ep-form--inline" key={ev.id} onSubmit={submitEdit} noValidate>
-                        <EventFormFields
-                          values={editForm}
-                          onChange={onEditChange}
-                          calendarConfigured={calendarConfigured}
-                          connected={connected}
-                          connecting={connecting}
-                          errors={editErrors.errors}
-                          registerField={editErrors.registerField}
-                          idPrefix="event-edit"
-                        />
-                        {editCalendarWarning && <p className="status status--error">{editCalendarWarning}</p>}
-                        <div className="form__actions">
-                          <button type="submit" className="btn" disabled={editSaving}>
-                            {editSaving ? "저장 중…" : "저장"}
-                          </button>
-                          <button type="button" className="btn btn--ghost" onClick={cancelEdit}>
-                            취소
-                          </button>
-                        </div>
-                      </form>
-                    ) : (
-                      <div className="ep-row" key={ev.id}>
-                        <div className="ep-row__main">
-                          <span className={`badge badge--${ev.type}`}>{eventTypeDisplayLabel(ev)}</span>
-                          <div className="ep-row__text">
-                            <p className="ep-row__title">{ev.title}</p>
-                            <p className="ep-row__meta">
-                              {ev.startTime && `${ev.startTime}${ev.endTime ? ` – ${ev.endTime}` : ""}`}
-                              {ATTENDANCE_BASED_EVENT_TYPES.includes(ev.type) &&
-                                `${ev.startTime ? " · " : ""}${
-                                  ev.attending === true ? "참석" : ev.attending === false ? "불참" : "참석 여부 미정"
-                                }`}
-                              {ev.memo ? ` · ${ev.memo}` : ""}
-                              {ev.status && ev.status !== "예정" ? ` · ${ev.status}` : ""}
-                            </p>
-                            {ev.calendarSync && <span className="ep-row__calendar">📅 Calendar 연동됨</span>}
-                          </div>
-                        </div>
-                        <div className="list__actions">
-                          <button className="btn-text" onClick={() => startEdit(ev)}>
-                            수정
-                          </button>
-                          <button className="btn-text btn-text--danger" onClick={() => requestRemove(ev)}>
-                            삭제
-                          </button>
-                        </div>
+          {scopeTab === "upcoming" ? (
+            <div className="pp-month-accordion ep-month-accordion">
+              {upcomingMonthGroups.length === 0 && <p className="list--empty">다가오는 일정이 없습니다.</p>}
+              {upcomingMonthGroups.map((mg) => {
+                const monthExpanded = expandedUpcomingMonths.has(mg.key);
+                return (
+                  <div className="pp-month-accordion__item" key={mg.key}>
+                    <button
+                      type="button"
+                      className="pp-month-accordion__summary"
+                      onClick={() => toggleUpcomingMonth(mg.key)}
+                      aria-expanded={monthExpanded}
+                    >
+                      <span>{mg.label}</span>
+                      <span className="pp-month-accordion__count">{mg.items.length}개</span>
+                      <span aria-hidden="true">{monthExpanded ? "∧" : "∨"}</span>
+                    </button>
+                    {monthExpanded && (
+                      <div className="ep-groups">
+                        {groupByDate(mg.items).map((group) => (
+                          <section className="ep-group" key={group.date}>
+                            <h2 className="ep-group__date">{formatGroupDate(group.date)}</h2>
+                            <div className="ep-list">
+                              {group.items.map((ev) =>
+                                editingId === ev.id ? (
+                                  renderEditForm(ev)
+                                ) : (
+                                  <div className="ep-row" key={ev.id}>
+                                    <div className="ep-row__main">
+                                      <span className={`badge badge--${ev.type}`}>{eventTypeDisplayLabel(ev)}</span>
+                                      <div className="ep-row__text">
+                                        <p className="ep-row__title">{ev.title}</p>
+                                        <p className="ep-row__meta">
+                                          {ev.startTime && `${ev.startTime}${ev.endTime ? ` – ${ev.endTime}` : ""}`}
+                                          {ATTENDANCE_BASED_EVENT_TYPES.includes(ev.type) &&
+                                            `${ev.startTime ? " · " : ""}${
+                                              ev.attending === true
+                                                ? "참석"
+                                                : ev.attending === false
+                                                ? "불참"
+                                                : "참석 여부 미정"
+                                            }`}
+                                          {ev.memo ? ` · ${ev.memo}` : ""}
+                                          {ev.status && ev.status !== "예정" ? ` · ${ev.status}` : ""}
+                                        </p>
+                                        {ev.calendarSync && (
+                                          <span className="ep-row__calendar">📅 Calendar 연동됨</span>
+                                        )}
+                                      </div>
+                                    </div>
+                                    <div className="list__actions">
+                                      <button className="btn-text" onClick={() => startEdit(ev)}>
+                                        수정
+                                      </button>
+                                      <button className="btn-text btn-text--danger" onClick={() => requestRemove(ev)}>
+                                        삭제
+                                      </button>
+                                    </div>
+                                  </div>
+                                )
+                              )}
+                            </div>
+                          </section>
+                        ))}
                       </div>
-                    )
-                  )}
-                </div>
-              </section>
-            ))}
-          </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="pp-month-accordion ep-month-accordion">
+              {pastMonthGroups.length === 0 && <p className="list--empty">지난 일정이 없습니다.</p>}
+              {pastMonthGroups.map((mg) => {
+                const monthExpanded = expandedPastMonths.has(mg.key);
+                return (
+                  <div className="pp-month-accordion__item" key={mg.key}>
+                    <button
+                      type="button"
+                      className="pp-month-accordion__summary"
+                      onClick={() => togglePastMonth(mg.key)}
+                      aria-expanded={monthExpanded}
+                    >
+                      <span>{mg.label}</span>
+                      <span className="pp-month-accordion__count">{mg.items.length}개</span>
+                      <span aria-hidden="true">{monthExpanded ? "∧" : "∨"}</span>
+                    </button>
+                    {monthExpanded && (
+                      <div className="ep-history-list">
+                        {mg.items.map((ev) =>
+                          editingId === ev.id ? (
+                            renderEditForm(ev)
+                          ) : (
+                            <div className="ep-history-row" key={ev.id}>
+                              <span className="ep-history-row__date">{shortDate(ev.date)}</span>
+                              <span className={`badge badge--${ev.type}`}>{eventTypeDisplayLabel(ev)}</span>
+                              {ev.status && ev.status !== "예정" && (
+                                <span className="ep-history-row__status">{ev.status}</span>
+                              )}
+                              <span className="ep-history-row__title">{ev.title}</span>
+                              <span className="ep-history-row__time">
+                                {ev.startTime && `${ev.startTime}${ev.endTime ? ` – ${ev.endTime}` : ""}`}
+                              </span>
+                              <span className="ep-history-row__actions">
+                                <button className="btn-text" onClick={() => startEdit(ev)}>
+                                  수정
+                                </button>
+                                <button className="btn-text btn-text--danger" onClick={() => requestRemove(ev)}>
+                                  삭제
+                                </button>
+                              </span>
+                            </div>
+                          )
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </>
       )}
 

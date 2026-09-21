@@ -487,16 +487,78 @@
   }
 }
 
-/* Mobile: 페이지 자체는 가로 스크롤 없이, 시간표 grid만 필요하면 내부 스크롤을
-   허용한다 - 셀을 억지로 좁혀 글자가 깨지지 않게 한다. */
+/* Mobile: 요일을 가로 열로 나열하면 화면 너비를 넘어가 계속 옆으로 스크롤해야 했다.
+   글자를 억지로 줄이는 대신, 교시마다 카드 하나로 쌓고 그 안에서 요일별 칸을 세로로
+   나열하는 구조로 바꾼다 - <table> 마크업과 셀 클릭 핸들러(openCell 등)는 그대로 두고
+   순수 CSS로만 재배치한다(data-day는 이 변환에서 요일 라벨을 보여주기 위해 각 td에
+   붙여둔 값일 뿐, 시간표 계산 로직과는 무관하다). */
 @media (max-width: 640px) {
-  .timetable-page .page__section {
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
+  .timetable-page .timetable-grid,
+  .timetable-page .timetable-grid tbody,
+  .timetable-page .timetable-grid tr {
+    display: block;
+    width: 100%;
   }
 
-  .timetable-page .timetable-grid {
-    min-width: 480px;
+  .timetable-page .timetable-grid thead {
+    display: none;
+  }
+
+  .timetable-page .timetable-grid tr {
+    margin-bottom: 10px;
+    border: 1px solid var(--border-soft);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+
+  .timetable-page .timetable-grid tr:last-child {
+    margin-bottom: 0;
+  }
+
+  .timetable-page .timetable-grid__period {
+    display: block;
+    width: 100%;
+    text-align: left;
+    padding: 8px 12px;
+    font-size: 12.5px;
+  }
+
+  .timetable-page .timetable-grid td {
+    display: flex;
+    align-items: center;
+    width: 100%;
+    padding: 0;
+    border: none;
+    border-top: 1px solid var(--border-soft);
+  }
+
+  /* data-day 값을 요일 라벨로 셀 왼쪽에 보여준다 - 표의 thead가 하던 역할을 각 칸
+     안에서 대신한다. */
+  .timetable-page .timetable-grid td::before {
+    content: attr(data-day);
+    display: flex;
+    align-items: center;
+    flex: 0 0 30px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    padding-left: 12px;
+  }
+
+  .timetable-page .timetable-grid__cell {
+    flex: 1 1 auto;
+    flex-direction: row;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 8px;
+    min-height: 44px;
+    border-radius: 0;
+    padding: 8px 12px 8px 0;
+  }
+
+  .timetable-page .timetable-grid__class,
+  .timetable-page .timetable-grid__subject {
+    display: inline;
   }
 
   .tt-tabs__btn {

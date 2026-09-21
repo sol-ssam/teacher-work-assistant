@@ -346,9 +346,21 @@ export const updateProgressStatusDeclaration = {
       detail: Schema.string({
         description: "currentPlanItemTitle과 함께 쓴다. 사용자가 말한 세부 진도 서술을 그대로 담는다(예: '지방의 기능까지'). 임의로 만들어내지 않는다.",
       }),
+      lessonsCompletedInItem: Schema.integer({
+        description:
+          "currentPlanItemTitle과 함께, 사용자가 그 항목 안에서 명확한 차시 숫자로 진행 정도를 말했을 때만 채운다(예: '지방 2차시까지 했어' → 2). 최소 1 이상의 정수. '절반 했어', '거의 다 했어', '조금 했어'처럼 숫자가 아닌 표현은 여기 채우지 않는다 - 그런 표현은 detail에만 그대로 담는다. 이 항목의 계획 차시(estimatedLessons)보다 큰 값을 임의로 보정해서 채우지 않는다 - 사용자가 말한 숫자 그대로 전달하면 실행기가 검증한다.",
+      }),
       lastClassDate: dateSchema("이 진도가 진행된 날짜 (선택, 생략 시 오늘)"),
     },
-    optionalProperties: ["year", "month", "completedThroughTitle", "currentPlanItemTitle", "detail", "lastClassDate"],
+    optionalProperties: [
+      "year",
+      "month",
+      "completedThroughTitle",
+      "currentPlanItemTitle",
+      "detail",
+      "lessonsCompletedInItem",
+      "lastClassDate",
+    ],
   }),
 };
 
