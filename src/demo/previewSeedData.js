@@ -48,27 +48,24 @@ const PLAN_ITEMS = [
   { title: "주거 설계 프로그램 학습", estimatedLessons: 2 },
 ];
 
-// 학급별 현재 진도. 앱의 실제 규칙을 그대로 따른다:
+// 학급별 현재 진도. 같은 교사가 같은 학년 8개 반을 가르치므로 진도는 대체로 비슷하고,
+// 시간표/학사일정 차이 때문에 1차시 안팎만 벌어지게 한다(조닝까지 완료한 반 / '효율적인
+// 주거 공간 구성'을 진행 중인 반 / 그 항목까지 완료한 반). 앱의 실제 규칙을 그대로 따른다:
 // - completedThrough: "그 항목까지 완료" (computeCompletedIdsThrough, progress_current 없음)
 // - current: "그 항목을 진행 중" (그 이전 항목까지만 완료 - computeCompletedIdsBefore -
-//   이고 항목 자체는 progress_current로 기록). estimatedLessons가 2 이상인 항목만
-//   lessonsCompletedInItem(항목 내부 진행 차시)을 쓴다. 전체 차시가 끝나면 완료 처리이므로
-//   "2/2차시 완료"는 lessonsCompletedInItem이 아니라 completedThrough로 표현한다.
+//   이고 항목 자체는 progress_current로 기록). 1차시짜리 항목의 진행 중은 lessonsCompletedInItem
+//   없이 detail만 쓰는 기존 방식 그대로다. '주거 설계 프로그램 학습'(2차시)은 아직 어느 반도
+//   시작하지 않았고, 사용자가 이후 진도를 직접 수정하면 1/2차시(lessonsCompletedInItem)
+//   상태가 앱의 기존 기능으로 만들어진다.
 const CLASS_PROGRESS = [
   { className: "301", completedThrough: 1 },
-  {
-    className: "302",
-    current: { index: 3, lessonsCompletedInItem: 1, detail: "설계 프로그램 기본 사용법까지" },
-  },
-  { className: "303", current: { index: 2, detail: "주거 공간 구성 사례 살펴보기까지" } },
+  { className: "302", current: { index: 2, detail: "주거 공간 구성 사례 살펴보기까지" } },
+  { className: "303", completedThrough: 1 },
   { className: "304", completedThrough: 2 },
-  { className: "305", completedThrough: 0 },
-  { className: "306", completedThrough: 1 },
-  { className: "307", completedThrough: 3 },
-  {
-    className: "308",
-    current: { index: 3, lessonsCompletedInItem: 1, detail: "평면도 그리기 실습까지" },
-  },
+  { className: "305", completedThrough: 1 },
+  { className: "306", current: { index: 2, detail: "주거 공간 구성 원리까지" } },
+  { className: "307", completedThrough: 2 },
+  { className: "308", completedThrough: 1 },
 ];
 
 function isWeekend(date) {
@@ -205,8 +202,9 @@ export function buildPreviewSeed({ uid, today, nowIso }) {
   // ---- 학사일정(school_day_schedules) ----
   // 한 날짜에는 학사일정 하나만 적용되므로(effectiveTimetable/remainingLessons가 date로 첫
   // 항목만 찾는다) 날짜가 겹치지 않게 배치한다. 요일별로 다른 학급이 걸리도록 요일을 정했다:
-  // 월(1~2교시: 3-1,3-2) / 목(3~4교시: 3-4) / 금(5~7교시: 3-8) / 진로체험의 날(events와 같은 날, 1~4교시)
-  // 학교 축제 준비(6~7교시)와 1학년 현장체험은 이 교사의 시간표(최대 5교시, 3학년만)와 겹치지 않는 일정이다.
+  // 화(1~3교시, 3학년: 3-4,3-5) / 월(3~4교시: 3-3) / 금(5~7교시: 3-8) /
+  // 진로체험의 날(events와 같은 날, 3학년 1~4교시). 1학년 현장체험학습은 1학년만 해당하는
+  // 전일 일정이라 3학년 가정 수업 시수에는 영향이 없다(학사일정에 있다고 모두 영향을 주는 것은 아니다).
   const used = new Set();
   const minDate = addDaysToDateString(today, 1);
   const place = (weekday, weekOffset) => {
@@ -233,15 +231,15 @@ export function buildPreviewSeed({ uid, today, nowIso }) {
   const schedules = [
     {
       key: "grade_activity",
-      date: place("월", 0),
+      date: place("화", 0),
       originalText: "학년별 체험활동",
-      memo: "3학년 해당 · 1~2교시 수업 조정",
+      memo: "3학년 해당 · 1~3교시 수업 조정",
       affectedGrades: [3],
-      affectedPeriods: [1, 2],
+      affectedPeriods: [1, 2, 3],
     },
     {
       key: "student_council",
-      date: place("목", 0),
+      date: place("월", 0),
       originalText: "학생자치활동",
       memo: "3~4교시 수업 조정",
       affectedPeriods: [3, 4],
@@ -262,17 +260,10 @@ export function buildPreviewSeed({ uid, today, nowIso }) {
       affectedPeriods: [5, 6, 7],
     },
     {
-      key: "festival_prep",
-      date: place("화", 1),
-      originalText: "학교 축제 준비",
-      memo: "6~7교시 수업 조정",
-      affectedPeriods: [6, 7],
-    },
-    {
       key: "field_trip_g1",
       date: place("수", 1),
       originalText: "1학년 현장체험학습",
-      memo: "1학년 해당 · 3학년 가정 수업에는 직접 영향 없음",
+      memo: "1학년 해당 · 전일 · 3학년 가정 수업에는 직접 영향 없음",
       noClassGrades: [1],
     },
   ];
@@ -282,8 +273,12 @@ export function buildPreviewSeed({ uid, today, nowIso }) {
   }
 
   // ---- 수업 횟수 수동 보정(lesson_adjustments) - 학사일정에 없던 학급 자체 사정 1건 ----
+  // 특정 학사일정과 연결되지 않은 독립 사례이므로, 학사일정이 있는 날과 겹치지 않는 금요일
+  // (3-6은 금요일 2교시 수업이 있다)에 둔다.
+  let adjustmentDate = nextWeekdayOnOrAfter(minDate, "금");
+  while (used.has(adjustmentDate)) adjustmentDate = addDaysToDateString(adjustmentDate, 7);
   add("lesson_adjustments", "preview_adjustment_306", {
-    date: nextWeekdayOnOrAfter(minDate, "화"),
+    date: adjustmentDate,
     className: "306",
     delta: -1,
     reason: "학급 자율활동으로 수업 1회 조정",
@@ -308,7 +303,7 @@ export function buildPreviewSeed({ uid, today, nowIso }) {
       key: "today_1",
       offset: 0,
       type: "council",
-      title: "가정과 수행평가 운영 협의",
+      title: "가정과 수업 및 평가 운영 협의",
       startTime: "15:30",
       endTime: "16:30",
       attending: true,
@@ -349,11 +344,13 @@ export function buildPreviewSeed({ uid, today, nowIso }) {
 
   // ---- 업무(tasks) ----
   const tasks = [
-    { key: "today_1", offset: 0, title: "수행평가 활동지 인쇄", priority: "high", completed: false },
+    // 일정과 연결: 오늘 15:30 교과협의회 ← 자료 준비, 수행평가 실시(+10) ← 활동지 인쇄/채점/결과 입력,
+    // 현재 진행 중인 '주거' 단원 ← 주거 수업 자료 준비/실습 환경 점검
+    { key: "today_1", offset: 0, title: "교과협의회 자료 준비", priority: "high", completed: false },
     { key: "today_2", offset: 0, title: "3학년 주거 수업 자료 준비", priority: "high", completed: false },
-    { key: "next_1", offset: 3, title: "수행평가 채점", priority: "high", completed: false },
-    { key: "next_2", offset: 5, title: "교과협의회 자료 작성", priority: "medium", completed: false },
-    { key: "next_3", offset: 7, title: "주거 설계 프로그램 실습 자료 준비", priority: "medium", completed: false },
+    { key: "next_1", offset: 2, title: "수행평가 활동지 인쇄", priority: "high", completed: false },
+    { key: "next_2", offset: 4, title: "주거 설계 프로그램 실습 환경 점검", priority: "medium", completed: false },
+    { key: "next_3", offset: 7, title: "수행평가 채점", priority: "high", completed: false },
     { key: "next_4", offset: 10, title: "평가 결과 입력", priority: "low", completed: false },
     { key: "done_1", offset: -2, title: "3학년 주거 학습지 수정", priority: "medium", completed: true },
     { key: "done_2", offset: -5, title: "수행평가 계획서 제출", priority: "high", completed: true },
