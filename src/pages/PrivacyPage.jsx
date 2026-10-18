@@ -277,8 +277,8 @@ export default function PrivacyPage() {
         </p>
         <ul>
           <li>성명: 박예솔</li>
-          <li>소속: 개인 개발자</li>
-          <li>직위: 운영자</li>
+          <li>소속: 서울시교육청</li>
+          <li>직위: 교사</li>
           <li>
             연락처(이메일): {CONTACT_EMAIL}
           </li>
