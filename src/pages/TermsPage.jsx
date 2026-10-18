@@ -1,11 +1,8 @@
 import { Link } from "react-router-dom";
 import "./LegalPage.css";
 
-const LAST_UPDATED = "2026년 9월 13일";
-
-function Placeholder({ children }) {
-  return <span className="legal-page__placeholder">[{children}]</span>;
-}
+const LAST_UPDATED = "2026년 10월 18일";
+const EFFECTIVE_DATE = "2026년 10월 18일";
 
 export default function TermsPage() {
   return (
@@ -25,7 +22,7 @@ export default function TermsPage() {
         <p className="legal-page__brand">교사용 업무 비서</p>
         <h1 className="legal-page__title">이용약관</h1>
         <p className="legal-page__updated">
-          최종 수정일: {LAST_UPDATED} · 시행일: <Placeholder>운영자 확인 필요</Placeholder>
+          최종 수정일: {LAST_UPDATED} · 시행일: {EFFECTIVE_DATE}
         </p>
 
         <p className="legal-page__intro">
@@ -45,8 +42,8 @@ export default function TermsPage() {
         <ul>
           <li>&ldquo;서비스&rdquo;란 서비스 제공자가 제공하는 교사용 업무 비서 웹 애플리케이션 전체를 말합니다.</li>
           <li>
-            &ldquo;이용자&rdquo;란 Google 계정으로 로그인하여 이 약관에 따라 서비스를
-            이용하는 자를 말하며, 이 서비스는 원칙적으로 교사 본인이 자신의 업무를 관리하기
+            &ldquo;이용자&rdquo;란 Google 계정으로 로그인하거나 기능 체험을 위한 미리보기
+            모드를 통해 이 약관에 따라 서비스를 이용하는 자를 말하며, 이 서비스는 원칙적으로 교사 본인이 자신의 업무를 관리하기
             위해 이용하는 것을 전제로 합니다.
           </li>
         </ul>
@@ -61,7 +58,8 @@ export default function TermsPage() {
 
         <h2>제4조 (Google 로그인을 통한 서비스 이용)</h2>
         <ul>
-          <li>서비스는 별도의 자체 회원가입 절차 없이 Firebase Authentication을 통한 Google 계정 로그인만으로 이용할 수 있습니다.</li>
+          <li>서비스는 별도의 자체 회원가입 절차 없이 Firebase Authentication을 통한 Google 계정 로그인으로 이용할 수 있습니다.</li>
+          <li>기능을 체험해 볼 수 있도록 미리보기 모드를 제공하며, 이 모드에서는 Firebase 익명 인증을 이용합니다. 미리보기는 정식 이용 등록이 아닌 체험용이며, 체험용 예시 데이터는 미리보기를 종료할 때 삭제됩니다.</li>
           <li>이용자는 자신이 관리 권한을 가진 Google 계정으로만 로그인해야 하며, 타인의 Google 계정을 무단으로 이용해서는 안 됩니다.</li>
           <li>Google 계정 자체의 생성, 보안 설정, 비밀번호 관리는 Google의 정책을 따르며 이 약관의 적용을 받지 않습니다.</li>
         </ul>
@@ -87,9 +85,8 @@ export default function TermsPage() {
           <li>서비스 제공자는 시스템 점검, 설비 교체·고장, 통신 장애, 외부 서비스(Google, Firebase, Vercel 등)의 장애 등의 사유로 서비스의 전부 또는 일부 제공을 일시적으로 중단할 수 있습니다.</li>
           <li>서비스 제공자는 운영상·기술상 필요에 따라 제공 중인 서비스의 내용을 변경하거나 종료할 수 있으며, 중대한 변경이나 종료의 경우 사전에 이 페이지 또는 서비스 화면을 통해 공지합니다.</li>
           <li>
-            이 서비스는 <Placeholder>운영자 확인 필요</Placeholder>(무료로 제공되는
-            개인·비상업적 서비스인지 여부)이며, 현재 코드 기준으로 결제 또는 유료 구독
-            기능은 포함되어 있지 않습니다.
+            이 서비스는 개인이 개발·운영하며 무료로 제공되는 비상업적 서비스이며, 현재 결제
+            또는 유료 구독 기능은 제공하지 않습니다.
           </li>
         </ul>
 
@@ -157,7 +154,7 @@ export default function TermsPage() {
         <h2>제14조 (책임 제한)</h2>
         <ul>
           <li>서비스 제공자는 천재지변, 외부 서비스(Google, Firebase, Vercel 등)의 장애 등 서비스 제공자가 통제할 수 없는 사유로 서비스를 제공할 수 없는 경우 책임을 지지 않습니다.</li>
-          <li>서비스는 <Placeholder>운영자 확인 필요</Placeholder> 형태로 제공되며, 서비스 제공자는 서비스의 완전성, 정확성, 특정 목적에의 적합성을 명시적으로 보장하지 않습니다.</li>
+          <li>서비스는 무료·비상업적 형태로 제공되며, 서비스 제공자는 서비스의 완전성, 정확성, 특정 목적에의 적합성을 명시적으로 보장하지 않습니다.</li>
           <li>서비스 제공자는 이용자가 서비스를 이용해 얻은 정보(AI 응답 포함)를 신뢰함으로써 발생한 손해에 대해, 서비스 제공자의 고의 또는 중대한 과실이 없는 한 책임을 지지 않습니다.</li>
         </ul>
 
@@ -180,7 +177,7 @@ export default function TermsPage() {
         <p>
           최종 수정일: {LAST_UPDATED}
           <br />
-          시행일: <Placeholder>운영자 확인 필요</Placeholder>
+          시행일: {EFFECTIVE_DATE}
         </p>
       </div>
     </div>

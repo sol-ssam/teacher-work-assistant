@@ -1,12 +1,9 @@
 import { Link } from "react-router-dom";
 import "./LegalPage.css";
 
-const CONTACT_EMAIL = import.meta.env.VITE_PRIVACY_CONTACT_EMAIL;
-const LAST_UPDATED = "2026년 9월 13일";
-
-function Placeholder({ children }) {
-  return <span className="legal-page__placeholder">[{children}]</span>;
-}
+const CONTACT_EMAIL = "pysol99@naver.com";
+const LAST_UPDATED = "2026년 10월 18일";
+const EFFECTIVE_DATE = "2026년 10월 18일";
 
 export default function PrivacyPage() {
   return (
@@ -26,7 +23,7 @@ export default function PrivacyPage() {
         <p className="legal-page__brand">교사용 업무 비서</p>
         <h1 className="legal-page__title">개인정보처리방침</h1>
         <p className="legal-page__updated">
-          최종 수정일: {LAST_UPDATED} · 시행일: <Placeholder>운영자 확인 필요</Placeholder>
+          최종 수정일: {LAST_UPDATED} · 시행일: {EFFECTIVE_DATE}
         </p>
 
         <p className="legal-page__intro">
@@ -41,6 +38,7 @@ export default function PrivacyPage() {
         <p>이 서비스는 다음의 목적을 위하여 개인정보를 처리합니다.</p>
         <ul>
           <li>Google 계정을 통한 로그인 및 이용자 본인 확인</li>
+          <li>기능 체험을 위한 미리보기 모드 제공(Firebase 익명 인증 이용)</li>
           <li>이용자별 업무 데이터(일정·업무·시간표·수업 진도 등)의 저장 및 제공</li>
           <li>이용자가 선택한 경우 Google Calendar와의 일정 연동</li>
           <li>AI 비서 및 문서 분석 등 업무 지원 기능 제공</li>
@@ -64,6 +62,16 @@ export default function PrivacyPage() {
           <li>표시 이름(닉네임)</li>
           <li>프로필 사진 URL</li>
         </ul>
+        <p>
+          기능 체험을 위한 미리보기 모드에서는 Google 계정 대신 Firebase Authentication의
+          익명 인증을 사용합니다. 이때 미리보기 이용자를 구분하기 위한 익명 UID가 생성되며,
+          이메일 주소·표시 이름·프로필 사진 등 Google 계정 정보는 전달되지 않습니다.
+          미리보기에서는 기능 체험을 위한 예시 데이터(시간표, 수업 진도, 일정, 업무 등)가
+          생성되고, 이 데이터는 Google 로그인 사용자의 실제 업무 데이터와 분리되어 해당 익명
+          UID로만 관리됩니다. 미리보기를 종료하면 해당 체험용 데이터를 삭제하도록 되어
+          있습니다. 미리보기를 이용하기 위해 실제 학교 정보나 개인정보를 입력할 필요는
+          없습니다.
+        </p>
         <p>이 밖에 이용자가 서비스 이용 과정에서 직접 입력하는 아래 데이터를 처리합니다.</p>
         <ul>
           <li>일정, 업무(할 일), 시간표, 임시 시간표 변경, 수업 진도, 학사일정 관련 메모</li>
@@ -88,8 +96,11 @@ export default function PrivacyPage() {
         <h2>3. Google Calendar 연동</h2>
         <ul>
           <li>
-            Google Calendar 연동은 이용자가 설정 화면에서 직접 &ldquo;연결하기&rdquo;를 선택한
-            경우에만 이루어지며, 자동으로 연결되지 않습니다.
+            Google Calendar 연동은 이용자가 Calendar 연동이 필요한 기능을 직접 실행한 경우에만
+            시작됩니다. 설정 화면에서 &ldquo;연결하기&rdquo;를 선택해 연결할 수 있으며,
+            일정·문서 분석 결과의 Calendar 동기화나 AI 비서의 Calendar 관련 요청처럼 연동이
+            필요한 기능을 사용하는 과정에서 Google 권한 승인 창이 표시될 수도 있습니다.
+            이용자의 동작이나 승인 없이 임의로 Google Calendar에 연결되지는 않습니다.
           </li>
           <li>
             이 서비스가 요청하는 Google OAuth 권한 범위는{" "}
@@ -122,8 +133,13 @@ export default function PrivacyPage() {
         </p>
         <ul>
           <li>
-            AI 비서에 입력한 질문과, 응답 생성을 위해 필요한 최소한의 업무 데이터(예: 오늘의
-            일정·업무 목록 일부)가 Google의 AI 서비스로 전송될 수 있습니다.
+            AI 비서에 입력한 질문이 Google의 AI 서비스로 전송됩니다. 또한 AI 비서가 이용자의
+            요청을 처리하는 과정에서 필요한 경우, 서비스에 저장된 관련 업무 정보(일정, 업무,
+            시간표와 임시 변경, 수업 진도·진도 기록, 학사일정에 따른 수업 횟수 정보 등)를
+            조회하며 그 조회 결과가 AI 모델에 전달될 수 있습니다. 이용자가 Google Calendar
+            일정 조회를 요청한 경우에는 해당 날짜의 Google Calendar 일정 정보도 전달될 수
+            있습니다. 모든 업무 데이터가 항상 전송되는 것은 아니며, 요청을 처리하는 데 필요한
+            범위의 정보가 전달됩니다.
           </li>
           <li>
             문서 분석 기능은 이용자가 직접 선택한 문서 파일(또는 그 안의 텍스트)을 별도 저장
@@ -173,45 +189,49 @@ export default function PrivacyPage() {
             앱 연결을 직접 해제해 주세요.
           </li>
           <li>
-            삭제 요청이나 계정 관련 문의를 받은 경우, 운영자는 합리적인 기간 내에 처리
-            결과를 안내합니다. 처리 기한 및 절차의 세부 사항은{" "}
-            <Placeholder>운영자 확인 필요</Placeholder>입니다.
+            삭제 요청이나 계정 관련 문의를 받은 경우, 운영자는 관련 법령에서 정한 절차에
+            따라 처리하고 그 결과를 안내합니다.
           </li>
         </ul>
 
         <h2>6. 개인정보의 제3자 제공, 처리위탁 및 외부 서비스 이용</h2>
         <p>
-          이 서비스는 개인정보를 별도로 판매하거나 제3자에게 제공하지 않으며, 서비스 제공을
-          위해 아래 외부 서비스를 이용합니다.
+          이 서비스는 이용자의 개인정보를 판매하지 않으며, 서비스 제공에 필요한 범위에서
+          다음과 같은 외부 서비스를 이용합니다.
         </p>
         <ul>
           <li>
             <strong>Google Firebase (Authentication, Cloud Firestore, App Check)</strong> —
-            로그인 처리, 업무 데이터 저장, 부정 이용 방지를 위해 이용합니다.
+            이용자 인증, 업무 데이터 저장 및 서비스 보안을 위해 이용합니다.
           </li>
           <li>
-            <strong>Google Calendar API</strong> — 이용자가 연동을 선택한 경우 일정을
-            조회·생성·수정·삭제하기 위해 이용합니다.
+            <strong>Google Calendar API</strong> — 이용자가 연동을 선택한 경우 일정의
+            조회·생성·수정·삭제를 위해 이용합니다.
           </li>
           <li>
-            <strong>Firebase AI Logic / Google Gemini</strong> — AI 비서 응답 생성과 업로드
-            문서 분석을 위해 이용합니다.
+            <strong>Firebase AI Logic / Google Gemini</strong> — AI 비서 응답 생성과 이용자가
+            선택한 문서의 분석을 위해 이용합니다. AI 기능 사용 시 요청 처리에 필요한 관련
+            업무 정보 또는 분석 대상 문서의 내용이 Google의 AI 서비스로 전송될 수 있습니다.
           </li>
           <li>
-            <strong>Google reCAPTCHA Enterprise</strong> — Firebase App Check와 함께 자동화된
-            부정 요청을 판별하기 위해 이용합니다.
+            <strong>Google reCAPTCHA Enterprise</strong> — Firebase App Check를 통한 비정상적인
+            요청 및 부정 이용 방지를 위해 이용합니다.
           </li>
           <li>
-            <strong>Vercel</strong> — 이 서비스의 프론트엔드(화면)를 호스팅하기 위해
-            이용합니다.
+            <strong>Vercel</strong> — 웹 애플리케이션 화면의 배포 및 제공을 위해 이용합니다.
           </li>
         </ul>
         <p>
-          위 서비스들은 각자의 인프라 운영 정책에 따라 국외에 서버를 두고 있을 수 있습니다.
-          각 서비스별 정확한 처리 사업자명, 서버 소재 국가, 국외 이전 항목·시점·방법, 그
-          보유·이용 기간 등 세부 사항은 각 서비스 제공자의 정책에 따르며,{" "}
-          <Placeholder>운영자 확인 필요</Placeholder>(이용약관·개인정보처리방침 링크를
-          함께 기재하는 것을 권장합니다).
+          위 외부 서비스의 이용 과정에서 서비스 제공에 필요한 정보가 국외에서 처리될 수
+          있습니다. Firebase 공식 안내에 따르면 Firebase Authentication은 미국에서
+          처리되며, Cloud Firestore와 App Check 등 일부 Firebase 서비스는 서비스의 종류와
+          설정에 따라 Google의 글로벌 인프라에서 처리될 수 있습니다. 그 밖의 데이터 처리
+          위치와 보유·이용 기간은 각 서비스의 설정 및 해당 서비스 제공자의 개인정보 보호정책과
+          데이터 처리 정책에 따릅니다.
+        </p>
+        <p>
+          이 서비스는 위 외부 서비스를 서비스 제공에 필요한 범위에서만 이용하며, 이용자의
+          개인정보를 광고 목적으로 판매하지 않습니다.
         </p>
 
         <h2>7. 안전성 확보조치</h2>
@@ -256,12 +276,11 @@ export default function PrivacyPage() {
           같이 담당자를 두고 있습니다.
         </p>
         <ul>
-          <li>성명: <Placeholder>운영자 입력 필요</Placeholder></li>
-          <li>소속: <Placeholder>운영자 입력 필요</Placeholder></li>
-          <li>직위: <Placeholder>운영자 입력 필요</Placeholder></li>
+          <li>성명: 박예솔</li>
+          <li>소속: 개인 개발자</li>
+          <li>직위: 운영자</li>
           <li>
-            연락처(이메일 등):{" "}
-            {CONTACT_EMAIL ? CONTACT_EMAIL : <Placeholder>운영자 입력 필요</Placeholder>}
+            연락처(이메일): {CONTACT_EMAIL}
           </li>
         </ul>
         <p>
@@ -277,7 +296,7 @@ export default function PrivacyPage() {
         <p>
           최종 수정일: {LAST_UPDATED}
           <br />
-          시행일: <Placeholder>운영자 확인 필요</Placeholder>
+          시행일: {EFFECTIVE_DATE}
         </p>
       </div>
     </div>
