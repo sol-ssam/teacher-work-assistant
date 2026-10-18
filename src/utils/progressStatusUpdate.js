@@ -21,6 +21,15 @@ export function computeCompletedIdsBefore(planItems, targetPlanItemId) {
   return sorted.slice(0, idx).map((p) => p.id);
 }
 
+// 학년+연도+월로 계획 항목만 추려 order 순으로 정렬한다. "현재 화면에 보이는 월의 계획"을
+// 구할 때뿐 아니라, 이월된 progress_current가 실제로 속한 월의 계획을 다시 구성할 때도
+// AI(toolExecutors.js)와 화면(MonthlyProgressPage.jsx/Home.jsx)이 공통으로 쓴다.
+export function filterPlanItemsForMonth(planItems, grade, year, month) {
+  return planItems
+    .filter((p) => p.grade === grade && String(p.year) === String(year) && String(p.month) === String(month))
+    .sort((a, b) => a.order - b.order);
+}
+
 // 계획 항목의 estimatedLessons가 "정상"인지 판정한다. 0이나 없는 값은 실수 데이터로
 // 취급한다(기획 원칙 - 정상 계획 차시는 최소 1차시). 기존 잘못된 데이터를 자동으로
 // 1로 보정하지 않고, 이 함수는 오직 판정에만 쓰인다.

@@ -570,6 +570,30 @@
   color: var(--text-secondary);
 }
 
+/* 이월된(다른 월 계획) 진행 중 항목임을 알리는 보조 문구 - 경고가 아니라 참고 정보라 */
+/* 본문과 같은 색 농도를 쓴다. */
+.progress-accordion__carried {
+  color: var(--text-secondary);
+  font-style: italic;
+}
+
+/* ===== 반별 수업 메모 ===== */
+.pp-class-note {
+  margin-top: 6px;
+}
+
+.pp-class-note__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pp-class-note__label {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
 .progress-accordion__remaining {
   flex: 0 0 auto;
   font-size: 12.5px;

@@ -25,6 +25,7 @@ import {
   findPlanItemByTitle,
   historyEntriesEqual,
   isValidEstimatedLessons,
+  filterPlanItemsForMonth,
 } from "../utils/progressStatusUpdate";
 
 const MAX_RESULTS = 15;
@@ -451,13 +452,19 @@ async function execGetProgressStatus(args, uid) {
     .filter((p) => !isValidEstimatedLessons(p.estimatedLessons))
     .map((p) => p.title);
 
+  // 이 학년의 전체(모든 연/월) 계획 - 월이 바뀌었다는 이유로 이전 달 진행 중 항목을
+  // 무시하지 않기 위해, current의 planItemId는 조회 중인 month로 좁히지 않고 여기서 찾는다.
+  const gradePlanItems = plans.filter((p) => p.grade === args.grade);
+
   const results = targetClasses.map((className) => {
     const checkedIds = checks
       .filter((c) => isSameClass(c.className, className) && planItemIds.has(c.planItemId) && c.completed)
       .map((c) => c.planItemId);
     const stats = analyzeClassProgress(planItems, checkedIds);
-    const current = currents.find((c) => isSameClass(c.className, className) && planItemIds.has(c.planItemId));
-    const currentPlanItem = current ? planItems.find((p) => p.id === current.planItemId) : null;
+    // current는 className마다 하나만 있으므로 조회 중인 월의 planItemIds로 좁히지
+    // 않는다 - 그렇게 하면 이전 달에서 이어진 진행 중 항목이 통째로 사라져 보인다.
+    const current = currents.find((c) => isSameClass(c.className, className));
+    const currentPlanItem = current ? gradePlanItems.find((p) => p.id === current.planItemId) : null;
     return {
       className,
       displayClassName: formatClassName(className),
@@ -593,12 +600,15 @@ async function execUpdateProgressStatus(args, uid) {
     listDocsByOwner("progress_history", uid),
   ]);
 
-  const planItems = plans
-    .filter((p) => p.grade === grade && String(p.year) === String(year) && String(p.month) === String(month))
-    .sort((a, b) => a.order - b.order);
+  // gradePlanItems = 이 학년의 전체(모든 연/월) 계획. planItems(조회 중인 month)는 "이번
+  // 달 계획에 그 제목이 있는지" 확인용으로만 쓰고, 실제 완료/진행 처리는 항목이 실제로
+  // 속한 월의 계획(targetMonthPlanItems, 아래에서 계산)을 기준으로 한다 - 그래야 월이
+  // 바뀌어도 이전 달 진행 중 항목을 그대로 수정/완료할 수 있다.
+  const gradePlanItems = plans.filter((p) => p.grade === grade);
+  const planItems = filterPlanItemsForMonth(gradePlanItems, grade, year, month);
 
-  if (planItems.length === 0) {
-    return { success: false, reason: `${year}년 ${month}월 ${grade}학년 진도계획이 아직 등록되어 있지 않습니다.` };
+  if (gradePlanItems.length === 0) {
+    return { success: false, reason: `${grade}학년 진도계획이 아직 등록되어 있지 않습니다.` };
   }
 
   if (!args.completedThroughTitle && !args.currentPlanItemTitle) {
@@ -606,14 +616,31 @@ async function execUpdateProgressStatus(args, uid) {
   }
 
   const existingCurrent = currents.find((c) => isSameClass(c.className, className));
+  const existingCurrentPlanItem = existingCurrent
+    ? gradePlanItems.find((p) => p.id === existingCurrent.planItemId)
+    : null;
   const classHistory = historyDocs
     .filter((h) => isSameClass(h.className, className))
     .sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
   const latestHistory = classHistory[0] || null;
 
+  // 제목으로 항목을 찾는다. 이번 달 계획에서 먼저 찾고, 거기 없으면(이월된 진행 중
+  // 항목을 가리키는 말일 수 있으므로) 지금 이 학급이 실제로 진행 중인 항목의 제목과도
+  // 비교한다. 월 전체 역사를 뒤져 비슷한 제목을 추측하지 않고, "사용자가 이미 진행
+  // 중이라고 기록해 둔 바로 그 항목"만 예외로 허용한다.
+  function resolveTitleAcrossMonths(title) {
+    const inCurrentMonth = findPlanItemByTitle(planItems, title);
+    if (inCurrentMonth.item || inCurrentMonth.candidates.length > 0) return inCurrentMonth;
+    if (existingCurrentPlanItem) {
+      const carriedOver = findPlanItemByTitle([existingCurrentPlanItem], title);
+      if (carriedOver.item) return carriedOver;
+    }
+    return inCurrentMonth;
+  }
+
   // "~까지 끝냈어" - 계획 순서상 그 항목까지 전부 완료 처리하고, 진행 중 상태는 지운다.
   if (args.completedThroughTitle) {
-    const { item, candidates } = findPlanItemByTitle(planItems, args.completedThroughTitle);
+    const { item, candidates } = resolveTitleAcrossMonths(args.completedThroughTitle);
     if (!item) {
       return {
         success: false,
@@ -626,7 +653,7 @@ async function execUpdateProgressStatus(args, uid) {
       uid,
       className,
       grade,
-      planItems,
+      planItems: filterPlanItemsForMonth(gradePlanItems, grade, item.year, item.month),
       checks,
       item,
       existingCurrent,
@@ -638,7 +665,7 @@ async function execUpdateProgressStatus(args, uid) {
   }
 
   // "~의 일부까지 했어" - 그 이전 항목까지만 완료 처리하고, 이 항목은 진행 중으로 기록한다.
-  const { item, candidates } = findPlanItemByTitle(planItems, args.currentPlanItemTitle);
+  const { item, candidates } = resolveTitleAcrossMonths(args.currentPlanItemTitle);
   if (!item) {
     return {
       success: false,
@@ -646,6 +673,9 @@ async function execUpdateProgressStatus(args, uid) {
       candidates: candidates.map((c) => ({ id: c.id, title: c.title })),
     };
   }
+  // item이 실제로 속한 월의 계획만 다시 구성한다 - 조회 중인 month(args 기본값은 오늘
+  // 기준)와 달라도, 그 항목이 원래 있던 달의 체크/완료 순서를 기준으로 계산해야 한다.
+  const targetMonthPlanItems = filterPlanItemsForMonth(gradePlanItems, grade, item.year, item.month);
 
   const detail = args.detail || "";
   const lessonsCompletedInItem = args.lessonsCompletedInItem;
@@ -675,7 +705,7 @@ async function execUpdateProgressStatus(args, uid) {
         uid,
         className,
         grade,
-        planItems,
+        planItems: targetMonthPlanItems,
         checks,
         item,
         existingCurrent,
@@ -687,8 +717,8 @@ async function execUpdateProgressStatus(args, uid) {
     }
   }
 
-  const completedIds = computeCompletedIdsBefore(planItems, item.id);
-  await syncChecksToCompletedIds(uid, planItems, className, completedIds, checks, now);
+  const completedIds = computeCompletedIdsBefore(targetMonthPlanItems, item.id);
+  await syncChecksToCompletedIds(uid, targetMonthPlanItems, className, completedIds, checks, now);
 
   // lessonsCompletedInItem을 명시적으로 null로 써서(생략하지 않고) 이전에 다른 항목에
   // 기록됐던 차시 값이 이번 진행 중 항목에 그대로 남아 있지 않게 한다 - updateDoc은

@@ -18,7 +18,7 @@ import {
 } from "../utils/briefingDerive";
 import { eventTypeDisplayLabel } from "../utils/constants";
 import { formatClassName, gradeOfClassName, isSameClass, analyzeClassProgress } from "../utils/progressComparison";
-import { isValidEstimatedLessons } from "../utils/progressStatusUpdate";
+import { isValidEstimatedLessons, filterPlanItemsForMonth } from "../utils/progressStatusUpdate";
 import BriefingSection from "../components/BriefingSection";
 import HomeQuickAssistant from "../components/HomeQuickAssistant";
 import "./Home.css";
@@ -105,9 +105,11 @@ export default function Home() {
             });
         const baseTimetable = todayEffective.periods.filter((p) => p.className && !p.excludedByAcademicSchedule);
 
-        // 오늘 수업마다 현재 진도를 붙여 보여준다. 학급마다 Firestore를 따로 조회하지
-        // 않는다 - progress_plans/progress_checks/progress_current를 이미 위에서 한 번씩만
-        // 읽었고, 여기서는 그 결과를 메모리에서 학급별로 계산만 한다(N+1 금지).
+        // 오늘 수업마다 "오늘 실제로 무엇을 해야 하는지"를 붙여 보여준다. 학급마다
+        // Firestore를 따로 조회하지 않는다 - progress_plans/progress_checks/progress_current를
+        // 이미 위에서 한 번씩만 읽었고, 여기서는 그 결과를 메모리에서 학급별로 계산만
+        // 한다(N+1 금지). MonthlyProgressPage는 "상태"(진행 중/시작 전·다음/이전 달에서
+        // 이어짐) 중심이지만, Home은 항상 "할 일" 문장 하나로만 보여준다.
         const classProgressDataFailed =
           progressPlansFailed || progressChecksFailed || progressCurrentsFailed;
         const classChipByName = new Map();
@@ -118,21 +120,31 @@ export default function Home() {
 
           for (const className of distinctClassNames) {
             const grade = gradeOfClassName(className);
-            const planItemsForMonth = progressPlans
-              .filter((p) => p.grade === grade && String(p.year) === py && String(p.month) === pm)
-              .sort((a, b) => a.order - b.order);
-            if (planItemsForMonth.length === 0) continue;
+            const planItemsForMonth = filterPlanItemsForMonth(progressPlans, grade, py, pm);
 
-            const current = progressCurrents.find(
-              (c) => isSameClass(c.className, className) && planItemsForMonth.some((p) => p.id === c.planItemId)
-            );
+            // D. 현재 월 계획 자체가 없음.
+            if (planItemsForMonth.length === 0) {
+              classChipByName.set(className, "진도 계획 없음");
+              continue;
+            }
+
+            // A/B. 진행 중 항목이 있으면 월과 무관하게(이월된 항목이어도) 그대로 보여준다 -
+            // progress_current에는 className당 하나만 있으므로 월로 다시 좁히지 않는다.
+            // detail 문장은 "완료했다"인지 "해야 한다"인지 schema만으로 알 수 없으므로,
+            // 코드가 임의로 재해석하지 않고 항상 "이어서 해야함" 뒤에 참고 기록으로만 붙인다.
+            const current = progressCurrents.find((c) => isSameClass(c.className, className));
             if (current) {
-              const planItem = planItemsForMonth.find((p) => p.id === current.planItemId);
+              // lessonsCompletedInItem의 분모(estimatedLessons)는 progress_plans(source of
+              // truth)에서 찾는다 - 이월된 항목이어도 찾을 수 있도록 월로 좁히지 않은
+              // progressPlans 전체에서 id로 찾는다.
+              const planItem = progressPlans.find((p) => p.id === current.planItemId);
               const lessonsSuffix =
                 typeof current.lessonsCompletedInItem === "number" && isValidEstimatedLessons(planItem?.estimatedLessons)
                   ? ` · ${current.lessonsCompletedInItem}/${planItem.estimatedLessons}차시`
                   : "";
-              classChipByName.set(className, { kind: "current", text: `${current.planItemTitle}${lessonsSuffix}` });
+              let text = `${current.planItemTitle} 이어서 해야함${lessonsSuffix}`;
+              if (current.detail) text += ` · 현재 기록: ${current.detail}`;
+              classChipByName.set(className, text);
               continue;
             }
 
@@ -143,9 +155,15 @@ export default function Home() {
               )
               .map((c) => c.planItemId);
             const stats = analyzeClassProgress(planItemsForMonth, checkedIds);
-            if (stats.currentItem) {
-              classChipByName.set(className, { kind: "done", text: stats.currentItem.title });
+
+            // E. 현재 월 계획을 전부 완료(진행 중 항목 없음).
+            if (!stats.nextItem) {
+              classChipByName.set(className, "이번 달 계획 완료");
+              continue;
             }
+
+            // C. 진행 중 항목 없음 + 이번 달 다음 항목이 있음(아직 시작 전인 반 포함).
+            classChipByName.set(className, `${stats.nextItem.title} 해야함`);
           }
         }
         const todayHasTimetableChange =
@@ -323,9 +341,7 @@ export default function Home() {
                       <span className="home-row-period">{t.period}교시</span>
                       {formatClassName(t.className)} — {t.subject}
                       {t.isOverride && <span className="home-badge home-badge--change">변경</span>}
-                      <div className="home-class-progress">
-                        {chip ? `${chip.kind === "current" ? "◐" : "✓"} ${chip.text}` : "진도 기록 없음"}
-                      </div>
+                      <div className="home-class-progress">{chip || "진도 계획 없음"}</div>
                     </>
                   );
                 }}
