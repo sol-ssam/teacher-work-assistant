@@ -154,7 +154,10 @@ export function resolveClassInput(rawInput, ownedClassNames) {
   return { className: null, candidates: [] };
 }
 
-export function analyzeClassProgress(planItems, checkedIds) {
+// currentProgress({ planItemId, lessonsCompletedInItem })는 그 반의 progress_current다(선택). 그 항목이
+// 미완료이고 계획 차시와 진행 차시가 모두 유효한 정수(1 <= 진행 <= 계획)일 때만 이미 진행한 차시를
+// 예상 필요 차시에서 뺀다. 그 외(차시 숫자 없음/잘못된 값/완료 항목/다른 항목)는 기존처럼 전체를 센다.
+export function analyzeClassProgress(planItems, checkedIds, currentProgress = null) {
   const sorted = [...planItems].sort((a, b) => a.order - b.order);
   const checkedSet = new Set(checkedIds);
 
@@ -178,8 +181,15 @@ export function analyzeClassProgress(planItems, checkedIds) {
     remainingItems.length > 0 &&
     remainingItems.every((item) => typeof item.estimatedLessons === "number" && item.estimatedLessons > 0);
 
+  const lessonsStillNeeded = (item) => {
+    const done = currentProgress?.lessonsCompletedInItem;
+    const isCurrentItem = currentProgress?.planItemId === item.id;
+    const valid =
+      isCurrentItem && Number.isInteger(done) && done >= 1 && done <= item.estimatedLessons;
+    return valid ? item.estimatedLessons - done : item.estimatedLessons;
+  };
   const estimatedRemainingLessons = allRemainingHaveEstimate
-    ? remainingItems.reduce((sum, item) => sum + item.estimatedLessons, 0)
+    ? remainingItems.reduce((sum, item) => sum + lessonsStillNeeded(item), 0)
     : null;
 
   return {

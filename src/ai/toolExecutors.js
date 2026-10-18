@@ -460,10 +460,10 @@ async function execGetProgressStatus(args, uid) {
     const checkedIds = checks
       .filter((c) => isSameClass(c.className, className) && planItemIds.has(c.planItemId) && c.completed)
       .map((c) => c.planItemId);
-    const stats = analyzeClassProgress(planItems, checkedIds);
     // current는 className마다 하나만 있으므로 조회 중인 월의 planItemIds로 좁히지
     // 않는다 - 그렇게 하면 이전 달에서 이어진 진행 중 항목이 통째로 사라져 보인다.
     const current = currents.find((c) => isSameClass(c.className, className));
+    const stats = analyzeClassProgress(planItems, checkedIds, current || null);
     const currentPlanItem = current ? gradePlanItems.find((p) => p.id === current.planItemId) : null;
     return {
       className,

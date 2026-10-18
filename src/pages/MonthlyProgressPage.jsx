@@ -835,10 +835,11 @@ export default function MonthlyProgressPage() {
       const checkedIds = checksForPlan
         .filter((c) => isSameClass(c.className, className) && c.completed)
         .map((c) => c.planItemId);
-      const stats = analyzeClassProgress(planItems, checkedIds);
+      const current = currents.find((c) => isSameClass(c.className, className)) || null;
+      const stats = analyzeClassProgress(planItems, checkedIds, current);
       return { className, stats };
     });
-  }, [classesInGrade, checksForPlan, planItems]);
+  }, [classesInGrade, checksForPlan, planItems, currents]);
 
   const comparison = useMemo(
     () =>

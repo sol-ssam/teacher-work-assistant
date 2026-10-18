@@ -43,13 +43,12 @@ export const PREVIEW_CLASS_NAMES = ["301", "302", "303", "304", "305", "306", "3
 // 3학년 가정 '주거' 단원. estimatedLessons는 계획 항목 하나의 차시 수다. 이전 달 계획은
 // 월 경계(이월) 사례를 보여주기 위한 것이고, 현재 달 계획이 오늘 기준의 메인 진도다.
 const PREV_PLAN_ITEMS = [
-  { title: "주거의 의미와 기능", estimatedLessons: 1 },
+  { title: "주거 가치관", estimatedLessons: 1 },
+  { title: "조닝", estimatedLessons: 1 },
   { title: "주거 환경과 건강", estimatedLessons: 2 },
   { title: "주거 안전과 사고 예방", estimatedLessons: 2 },
 ];
 const PLAN_ITEMS = [
-  { title: "주거 가치관", estimatedLessons: 1 },
-  { title: "조닝", estimatedLessons: 1 },
   { title: "효율적인 주거 공간 구성", estimatedLessons: 2 },
   { title: "주거 설계 프로그램 학습", estimatedLessons: 3 },
 ];
@@ -60,33 +59,41 @@ const PLAN_ITEMS = [
 //   항목 자체는 progress_current로 기록). lessons는 lessonsCompletedInItem(estimatedLessons보다 작아야 함).
 // - scope "prev"는 이전 달 계획의 항목을 가리킨다(월 경계 이월 사례). 그 반의 현재 달 progress_checks는 없다.
 // - 이전 달 계획은 이월 반을 뺀 모든 반이 이미 끝낸 것으로 progress_checks를 둔다.
-// - earlier는 한 번 전 수업의 history 한 건(최근 기록 목록에 2건이 보이도록)이다.
+// - earlier는 한 번 전 수업의 history 한 건(최근 기록 목록에 2건이 보이도록)이며 항상 최신 상태보다 앞선 진도다.
+//
+// 계획상 필요 차시 = 이번 달 미완료 항목의 (계획 차시 - 진행한 차시). 반별 성격:
+// 301/304/305 평균(구성 완료, 다음은 설계), 302 약간 늦음(구성 1/2차시), 303 설계 1/3차시,
+// 306 설계 진행 중(차시 숫자 없는 기록 방식), 307 가장 빠름(설계 2/3차시), 308 지난달 진도가 남음(이월).
 const CLASS_PROGRESS = [
-  { className: "301", state: { kind: "through", index: 1 } },
+  { className: "301", state: { kind: "through", index: 0 } },
   {
     className: "302",
-    state: { kind: "current", index: 2, lessons: 1, detail: "주거 공간 구성 사례 살펴보기까지" },
-    earlier: { kind: "through", index: 1 },
+    state: { kind: "current", index: 0, lessons: 1, detail: "주거 공간 구성 사례 살펴보기까지" },
+    earlier: { kind: "through", scope: "prev", index: 3 },
     note: "다음 시간 공간 구성 사례 활동지 배부 필요",
   },
-  { className: "303", state: { kind: "through", index: 1 } },
+  {
+    className: "303",
+    state: { kind: "current", index: 1, lessons: 1, detail: "설계 프로그램 기본 사용법 익히기까지" },
+    earlier: { kind: "through", index: 0 },
+  },
   {
     className: "304",
-    state: { kind: "through", index: 2 },
+    state: { kind: "through", index: 0 },
     note: "설계 프로그램 실습 전 학생 계정 로그인 확인",
   },
-  { className: "305", state: { kind: "through", index: 1 } },
-  { className: "306", state: { kind: "current", index: 2, detail: "주거 공간 구성 원리까지" } },
+  { className: "305", state: { kind: "through", index: 0 } },
+  { className: "306", state: { kind: "current", index: 1, detail: "설계 프로그램에서 방 배치하기까지" } },
   {
     className: "307",
-    state: { kind: "current", index: 3, lessons: 2, detail: "평면도 배치 완성하기 해야함" },
-    earlier: { kind: "through", index: 2 },
+    state: { kind: "current", index: 1, lessons: 2, detail: "평면도 배치 완성하기 해야함" },
+    earlier: { kind: "current", index: 1, lessons: 1, detail: "설계 프로그램 기본 사용법 익히기까지" },
     note: "결석한 학생 학습지 보충 확인",
   },
   {
     className: "308",
-    state: { kind: "current", scope: "prev", index: 2, lessons: 1, detail: "화재·낙상 사고 예방까지" },
-    earlier: { kind: "through", scope: "prev", index: 1 },
+    state: { kind: "current", scope: "prev", index: 3, lessons: 1, detail: "화재·낙상 사고 예방까지" },
+    earlier: { kind: "through", scope: "prev", index: 2 },
   },
 ];
 
