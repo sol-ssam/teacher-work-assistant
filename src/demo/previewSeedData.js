@@ -3,7 +3,7 @@
 // - Firestore를 전혀 건드리지 않는 순수 함수다. AI(Gemini)로 생성하지 않고, 항상 같은
 //   입력(uid, today)에 같은 결과를 돌려주는 고정(deterministic) seed다.
 // - 문서 형식은 실제 앱이 쓰는 schema와 정확히 같다(timetable, progress_plans,
-//   progress_checks, progress_current, progress_history, school_day_schedules,
+//   progress_checks, progress_current, progress_history, progress_class_notes, school_day_schedules,
 //   lesson_adjustments, events, tasks). 구형 lesson_plan/class_progress는 쓰지 않는다.
 // - 예상 시수 같은 계산 결과는 저장하지 않는다. 시간표 + 학사일정 + 수업 보정만 넣고,
 //   실제 남은 수업 횟수는 앱의 기존 deterministic 계산(remainingLessons.js)이 읽어서 계산한다.
@@ -12,7 +12,7 @@
 import { addDaysToDateString, weekdayKoreanOf } from "../utils/date";
 import { computeCompletedIdsThrough, computeCompletedIdsBefore } from "../utils/progressStatusUpdate";
 
-export const PREVIEW_SEED_VERSION = 1;
+export const PREVIEW_SEED_VERSION = 2;
 
 const GRADE = "3";
 const SUBJECT = "가정";
@@ -40,32 +40,54 @@ const TIMETABLE_ROWS = [
 
 export const PREVIEW_CLASS_NAMES = ["301", "302", "303", "304", "305", "306", "307", "308"];
 
-// 3학년 가정 '주거' 단원. estimatedLessons는 계획 항목 전체의 차시 수(총 5차시)다.
+// 3학년 가정 '주거' 단원. estimatedLessons는 계획 항목 하나의 차시 수다. 이전 달 계획은
+// 월 경계(이월) 사례를 보여주기 위한 것이고, 현재 달 계획이 오늘 기준의 메인 진도다.
+const PREV_PLAN_ITEMS = [
+  { title: "주거의 의미와 기능", estimatedLessons: 1 },
+  { title: "주거 환경과 건강", estimatedLessons: 2 },
+  { title: "주거 안전과 사고 예방", estimatedLessons: 2 },
+];
 const PLAN_ITEMS = [
   { title: "주거 가치관", estimatedLessons: 1 },
   { title: "조닝", estimatedLessons: 1 },
-  { title: "효율적인 주거 공간 구성", estimatedLessons: 1 },
-  { title: "주거 설계 프로그램 학습", estimatedLessons: 2 },
+  { title: "효율적인 주거 공간 구성", estimatedLessons: 2 },
+  { title: "주거 설계 프로그램 학습", estimatedLessons: 3 },
 ];
 
-// 학급별 현재 진도. 같은 교사가 같은 학년 8개 반을 가르치므로 진도는 대체로 비슷하고,
-// 시간표/학사일정 차이 때문에 1차시 안팎만 벌어지게 한다(조닝까지 완료한 반 / '효율적인
-// 주거 공간 구성'을 진행 중인 반 / 그 항목까지 완료한 반). 앱의 실제 규칙을 그대로 따른다:
-// - completedThrough: "그 항목까지 완료" (computeCompletedIdsThrough, progress_current 없음)
-// - current: "그 항목을 진행 중" (그 이전 항목까지만 완료 - computeCompletedIdsBefore -
-//   이고 항목 자체는 progress_current로 기록). 1차시짜리 항목의 진행 중은 lessonsCompletedInItem
-//   없이 detail만 쓰는 기존 방식 그대로다. '주거 설계 프로그램 학습'(2차시)은 아직 어느 반도
-//   시작하지 않았고, 사용자가 이후 진도를 직접 수정하면 1/2차시(lessonsCompletedInItem)
-//   상태가 앱의 기존 기능으로 만들어진다.
+// 학급별 현재 진도. 앱의 실제 규칙을 그대로 따른다:
+// - through: "그 항목까지 완료" (computeCompletedIdsThrough, progress_current 없음)
+// - current: "그 항목을 진행 중" (그 이전 항목까지만 완료 - computeCompletedIdsBefore - 하고
+//   항목 자체는 progress_current로 기록). lessons는 lessonsCompletedInItem(estimatedLessons보다 작아야 함).
+// - scope "prev"는 이전 달 계획의 항목을 가리킨다(월 경계 이월 사례). 그 반의 현재 달 progress_checks는 없다.
+// - 이전 달 계획은 이월 반을 뺀 모든 반이 이미 끝낸 것으로 progress_checks를 둔다.
+// - earlier는 한 번 전 수업의 history 한 건(최근 기록 목록에 2건이 보이도록)이다.
 const CLASS_PROGRESS = [
-  { className: "301", completedThrough: 1 },
-  { className: "302", current: { index: 2, detail: "주거 공간 구성 사례 살펴보기까지" } },
-  { className: "303", completedThrough: 1 },
-  { className: "304", completedThrough: 2 },
-  { className: "305", completedThrough: 1 },
-  { className: "306", current: { index: 2, detail: "주거 공간 구성 원리까지" } },
-  { className: "307", completedThrough: 2 },
-  { className: "308", completedThrough: 1 },
+  { className: "301", state: { kind: "through", index: 1 } },
+  {
+    className: "302",
+    state: { kind: "current", index: 2, lessons: 1, detail: "주거 공간 구성 사례 살펴보기까지" },
+    earlier: { kind: "through", index: 1 },
+    note: "다음 시간 공간 구성 사례 활동지 배부 필요",
+  },
+  { className: "303", state: { kind: "through", index: 1 } },
+  {
+    className: "304",
+    state: { kind: "through", index: 2 },
+    note: "설계 프로그램 실습 전 학생 계정 로그인 확인",
+  },
+  { className: "305", state: { kind: "through", index: 1 } },
+  { className: "306", state: { kind: "current", index: 2, detail: "주거 공간 구성 원리까지" } },
+  {
+    className: "307",
+    state: { kind: "current", index: 3, lessons: 2, detail: "평면도 배치 완성하기 해야함" },
+    earlier: { kind: "through", index: 2 },
+    note: "결석한 학생 학습지 보충 확인",
+  },
+  {
+    className: "308",
+    state: { kind: "current", scope: "prev", index: 2, lessons: 1, detail: "화재·낙상 사고 예방까지" },
+    earlier: { kind: "through", scope: "prev", index: 1 },
+  },
 ];
 
 function isWeekend(date) {
@@ -125,79 +147,104 @@ export function buildPreviewSeed({ uid, today, nowIso }) {
   });
 
   // ---- 진도 계획(progress_plans) ----
-  const planDocs = PLAN_ITEMS.map((p, i) => ({
-    id: docId(`plan_${i + 1}`),
-    order: i,
-    title: p.title,
-    estimatedLessons: p.estimatedLessons,
-  }));
-  planDocs.forEach((p) => {
-    add("progress_plans", p.id, {
-      grade: GRADE,
-      year,
-      month,
-      title: p.title,
-      order: p.order,
-      estimatedLessons: p.estimatedLessons,
-      ...stamps,
+  // 이전 달 = 현재 달의 바로 앞 달(1월이면 작년 12월). 날짜는 today에서 계산한다.
+  const prevYear = month === "1" ? String(Number(year) - 1) : year;
+  const prevMonth = month === "1" ? "12" : String(Number(month) - 1);
+  const buildPlanDocs = (items, idPrefix, planYear, planMonth) =>
+    items.map((p, i) => {
+      const planDoc = { id: docId(`${idPrefix}_${i + 1}`), order: i, title: p.title, estimatedLessons: p.estimatedLessons };
+      add("progress_plans", planDoc.id, {
+        grade: GRADE,
+        year: planYear,
+        month: planMonth,
+        title: p.title,
+        order: i,
+        estimatedLessons: p.estimatedLessons,
+        ...stamps,
+      });
+      return planDoc;
     });
-  });
-  const planIndexById = Object.fromEntries(planDocs.map((p, i) => [p.id, i + 1]));
+  const prevPlanDocs = buildPlanDocs(PREV_PLAN_ITEMS, "plan_prev", prevYear, prevMonth);
+  const planDocs = buildPlanDocs(PLAN_ITEMS, "plan", year, month);
 
-  // ---- 학급별 진도(progress_checks / progress_current / progress_history) ----
+  // ---- 학급별 진도(progress_checks / progress_current / progress_history) + 수업 메모 ----
+  const scopeDocs = (scope) => (scope === "prev" ? prevPlanDocs : planDocs);
+  // 상태(through/current) -> 대상 항목과 (그 달 계획 안에서) 완료된 항목 id 목록
+  const resolve = (st) => {
+    const docsInScope = scopeDocs(st.scope);
+    const target = docsInScope[st.index];
+    const completedIds =
+      st.kind === "current"
+        ? computeCompletedIdsBefore(docsInScope, target.id)
+        : computeCompletedIdsThrough(docsInScope, target.id);
+    return { target, completedIds };
+  };
+  const historyDoc = (className, st, date) => {
+    const { target, completedIds } = resolve(st);
+    const isCurrent = st.kind === "current";
+    return {
+      className,
+      grade: GRADE,
+      date,
+      planItemId: target.id,
+      planItemTitle: target.title,
+      detail: isCurrent ? st.detail || "" : null,
+      completedPlanItemIds: completedIds,
+      ...(isCurrent ? { lessonsCompletedInItem: st.lessons ?? null } : {}),
+      source: "manual",
+      createdAt: nowIso,
+    };
+  };
+
   for (const cp of CLASS_PROGRESS) {
     const lastClassDate = previousLessonDate(today, cp.className);
-    let completedIds;
-    let target;
+    const { target, completedIds } = resolve(cp.state);
+    const scope = cp.state.scope === "prev" ? "prev" : "current";
 
-    if (cp.current) {
-      target = planDocs[cp.current.index];
-      completedIds = computeCompletedIdsBefore(planDocs, target.id);
+    if (cp.state.kind === "current") {
       add("progress_current", docId(`current_${cp.className}`), {
         className: cp.className,
         grade: GRADE,
         planItemId: target.id,
         planItemTitle: target.title,
-        detail: cp.current.detail || "",
-        lessonsCompletedInItem: cp.current.lessonsCompletedInItem ?? null,
+        detail: cp.state.detail || "",
+        lessonsCompletedInItem: cp.state.lessons ?? null,
         updatedAt: nowIso,
         lastClassDate,
         createdAt: nowIso,
       });
-      add("progress_history", docId(`history_${cp.className}`), {
-        className: cp.className,
-        grade: GRADE,
-        date: lastClassDate,
-        planItemId: target.id,
-        planItemTitle: target.title,
-        detail: cp.current.detail || "",
-        completedPlanItemIds: completedIds,
-        lessonsCompletedInItem: cp.current.lessonsCompletedInItem ?? null,
-        source: "manual",
-        createdAt: nowIso,
-      });
-    } else {
-      target = planDocs[cp.completedThrough];
-      completedIds = computeCompletedIdsThrough(planDocs, target.id);
-      add("progress_history", docId(`history_${cp.className}`), {
-        className: cp.className,
-        grade: GRADE,
-        date: lastClassDate,
-        planItemId: target.id,
-        planItemTitle: target.title,
-        detail: null,
-        completedPlanItemIds: completedIds,
-        source: "manual",
-        createdAt: nowIso,
-      });
+    }
+    add("progress_history", docId(`history_${cp.className}`), historyDoc(cp.className, cp.state, lastClassDate));
+    if (cp.earlier) {
+      add(
+        "progress_history",
+        docId(`history_${cp.className}_prev`),
+        historyDoc(cp.className, cp.earlier, addDaysToDateString(lastClassDate, -7))
+      );
     }
 
-    for (const planItemId of completedIds) {
-      add("progress_checks", docId(`check_${cp.className}_${planIndexById[planItemId]}`), {
+    // 체크: 이전 달 계획은 이월 반(scope prev)만 일부, 나머지는 전부 완료. 현재 달 체크는 현재 달 반만.
+    const checkIds = scope === "prev" ? completedIds : [...prevPlanDocs.map((p) => p.id), ...completedIds];
+    const labelOf = (id) => {
+      const prevIdx = prevPlanDocs.findIndex((p) => p.id === id);
+      return prevIdx >= 0 ? `p${prevIdx + 1}` : String(planDocs.findIndex((p) => p.id === id) + 1);
+    };
+    for (const planItemId of checkIds) {
+      add("progress_checks", docId(`check_${cp.className}_${labelOf(planItemId)}`), {
         planItemId,
         className: cp.className,
         completed: true,
         completedAt: nowIso,
+        createdAt: nowIso,
+        updatedAt: nowIso,
+      });
+    }
+
+    if (cp.note) {
+      add("progress_class_notes", docId(`note_${cp.className}`), {
+        className: cp.className,
+        grade: GRADE,
+        note: cp.note,
         createdAt: nowIso,
         updatedAt: nowIso,
       });
@@ -402,7 +449,7 @@ export function assertPreviewSeedIntegrity(seed, uid) {
 
   const plans = byCollection("progress_plans");
   const planById = new Map(plans.map((d) => [d.id, d.data]));
-  if (plans.length !== PLAN_ITEMS.length) fail("진도 계획 항목 수가 다릅니다.");
+  if (plans.length !== PLAN_ITEMS.length + PREV_PLAN_ITEMS.length) fail("진도 계획 항목 수가 다릅니다.");
   for (const c of byCollection("progress_checks")) {
     if (!planById.has(c.data.planItemId)) fail("존재하지 않는 계획 항목을 가리키는 progress_checks가 있습니다.");
   }
@@ -418,6 +465,12 @@ export function assertPreviewSeedIntegrity(seed, uid) {
       fail("lessonsCompletedInItem은 1 이상이고 계획 차시(estimatedLessons)보다 작아야 합니다.");
     }
   }
+
+  for (const n of byCollection("progress_class_notes")) {
+    if (!PREVIEW_CLASS_NAMES.includes(n.data.className) || !n.data.note) fail("progress_class_notes 내용이 올바르지 않습니다.");
+  }
+  const carried = byCollection("progress_current").filter((c) => planById.get(c.data.planItemId).month !== planById.get(`preview_${uid}_plan_1`).month);
+  if (carried.length === 0) fail("이전 달에서 이어지는 진행 중 항목이 없습니다.");
 
   const schedules = byCollection("school_day_schedules");
   const dates = schedules.map((d) => d.data.date);

@@ -5,7 +5,7 @@ import { getClassProgress } from "../firebase/collections";
 import { listDocsByOwner } from "../firebase/crud";
 import { getEffectiveDayTimetable, isTimetableChangedDay } from "../utils/effectiveTimetable";
 import { getSettings, markBriefingShownToday } from "../firebase/settingsService";
-import { todayDateString, todayDisplayString, formatDateDisplay } from "../utils/date";
+import { todayDateString, todayDisplayString, formatDateDisplay, addDaysToDateString, weekdayKoreanOf } from "../utils/date";
 import { shouldTriggerAutoBriefing } from "../utils/briefing";
 import { analyzeProgress } from "../utils/progressAnalysis";
 import { sortByPriorityThenDate } from "../utils/taskUrgency";
@@ -96,14 +96,36 @@ export default function Home() {
         // 오늘의 "최종 실제 시간표" - 학사일정 요일대체(confirmed)와 개인 timetable_overrides가
         // 이미 반영된 결과다. remainingLessons.js가 남은 수업을 셀 때 쓰는 것과 같은 우선순위
         // (school_day_schedules -> 기본 timetable -> 개인 override)를 그대로 따른다.
-        const todayEffective = (timetableFailed || overridesFailed || schedulesFailed)
-          ? { periods: [], scheduleDayOverride: null }
-          : getEffectiveDayTimetable(today, {
-              timetable: fullTimetable,
-              timetableOverrides: allOverrides,
-              schoolDaySchedules,
-            });
-        const baseTimetable = todayEffective.periods.filter((p) => p.className && !p.excludedByAcademicSchedule);
+        const effectiveFor = (date) =>
+          getEffectiveDayTimetable(date, {
+            timetable: fullTimetable,
+            timetableOverrides: allOverrides,
+            schoolDaySchedules,
+          });
+        const lessonsOf = (date) =>
+          effectiveFor(date).periods.filter((p) => p.className && !p.excludedByAcademicSchedule);
+        const timetableUsable = !(timetableFailed || overridesFailed || schedulesFailed);
+        const todayEffective = timetableUsable ? effectiveFor(today) : { periods: [], scheduleDayOverride: null };
+        let baseTimetable = todayEffective.periods.filter((p) => p.className && !p.excludedByAcademicSchedule);
+
+        // 미리보기(익명) 사용자가 주말에 접속하면 오늘 수업이 없어 진도 안내를 볼 수 없다.
+        // 이때만 오늘 이후 수업이 있는 가장 가까운 날(같은 시간표 계산)의 수업을 "다음 수업"으로
+        // 보여준다. 일반 사용자와 평일에는 전혀 적용되지 않는다.
+        let nextLessonWeekday = null;
+        if (user.isAnonymous === true && timetableUsable && baseTimetable.length === 0) {
+          const todayWeekday = weekdayKoreanOf(today);
+          if (todayWeekday === "토" || todayWeekday === "일") {
+            for (let i = 1; i <= 7; i++) {
+              const date = addDaysToDateString(today, i);
+              const lessons = lessonsOf(date);
+              if (lessons.length > 0) {
+                baseTimetable = lessons;
+                nextLessonWeekday = weekdayKoreanOf(date);
+                break;
+              }
+            }
+          }
+        }
 
         // 오늘 수업마다 "오늘 실제로 무엇을 해야 하는지"를 붙여 보여준다. 학급마다
         // Firestore를 따로 조회하지 않는다 - progress_plans/progress_checks/progress_current를
@@ -179,6 +201,7 @@ export default function Home() {
 
         setData({
           baseTimetable,
+          nextLessonWeekday,
           timetableFailed,
           classChipByName,
           todayHasTimetableChange,
@@ -276,7 +299,7 @@ export default function Home() {
           {data && (
             <div className="home__summary">
               <span className="home__summary-pill">
-                오늘 수업 <strong>{data.baseTimetable.length}</strong>
+                {data.nextLessonWeekday ? "다음 수업" : "오늘 수업"} <strong>{data.baseTimetable.length}</strong>
               </span>
               <span className="home__summary-pill">
                 오늘 일정 <strong>{data.meetings.length + data.personalEvents.length}</strong>
@@ -327,7 +350,7 @@ export default function Home() {
 
               <BriefingSection
                 icon="📚"
-                title="오늘 수업"
+                title={data.nextLessonWeekday ? `다음 수업 · ${data.nextLessonWeekday}요일` : "오늘 수업"}
                 tone="class"
                 navLink={{ to: "/timetable", label: "시간표 보기" }}
                 items={data.baseTimetable}

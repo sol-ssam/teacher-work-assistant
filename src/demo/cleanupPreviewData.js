@@ -3,6 +3,10 @@ import { db } from "../firebase/config";
 import { WORK_DATA_COLLECTIONS, deleteAllInCollection } from "../firebase/resetData";
 import { signOutUser } from "../firebase/authService";
 
+// WORK_DATA_COLLECTIONS(일반 사용자의 "데이터 초기화" 대상)에는 아직 없지만 미리보기가 만드는
+// 컬렉션. 일반 사용자 초기화 범위를 바꾸지 않으려고 미리보기 정리에서만 따로 추가한다.
+const PREVIEW_EXTRA_COLLECTIONS = ["progress_class_notes"];
+
 // '미리보기 종료' 전용 정리. Anonymous(미리보기) 사용자가 체험 중 만든 모든 데이터를 지운다.
 //
 // - "preview_로 시작하는 ID"가 아니라 ownerId == 현재 익명 UID로 조회한 문서만 지운다.
@@ -19,7 +23,7 @@ export async function cleanupPreviewUserData(user) {
   const uid = user.uid;
 
   const failed = [];
-  for (const name of WORK_DATA_COLLECTIONS) {
+  for (const name of [...WORK_DATA_COLLECTIONS, ...PREVIEW_EXTRA_COLLECTIONS]) {
     try {
       // eslint-disable-next-line no-await-in-loop
       await deleteAllInCollection(name, uid);

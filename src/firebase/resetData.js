@@ -18,6 +18,7 @@ export const WORK_DATA_COLLECTIONS = [
   "lesson_adjustments",
   "progress_current",
   "progress_history",
+  "progress_class_notes",
 ];
 
 // Firestore 배치 쓰기 한도(500)보다 여유 있게 잡는다.
