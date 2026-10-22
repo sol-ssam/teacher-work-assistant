@@ -1,3 +1,12 @@
+/* Home.css의 .home__row(그리드)/.home__grid(세로 flex) 모두 자식의 min-width가
+   기본값(auto)이면 내부 컨텐츠의 min-content 크기를 "자동 최소 크기"로 그대로 물려받아,
+   폭이 좁아져도 카드 자체가 줄어들지 않고 뷰포트 밖으로 넘치게 된다("grid/flex item
+   overflow" 문제). 이 카드만 그 사슬을 끊어 실제 사용 가능한 폭까지 줄어들게 한다 -
+   .home-card/.home__row 등 다른 카드가 공유하는 규칙은 그대로 둔다. */
+.home-quick-assistant {
+  min-width: 0;
+}
+
 .home-quick-assistant__log {
   display: flex;
   flex-direction: column;
