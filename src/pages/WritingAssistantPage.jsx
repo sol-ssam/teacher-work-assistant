@@ -45,6 +45,34 @@ const initialForm = {
   content: "",
 };
 
+// select/dropdown 대신 선택지를 한눈에 볼 수 있는 pill 버튼 그룹. 실제 <button>을 쓰고
+// aria-pressed로 선택 상태를 전달해서, 보기에만 선택된 것처럼 보이는 div 클릭 방식이
+// 되지 않게 한다. 값/상태는 각 호출부의 기존 form state를 그대로 쓴다.
+function OptionGroup({ label, idPrefix, options, value, onChange, disabled }) {
+  const labelId = `${idPrefix}-label`;
+  return (
+    <div className="field wa-option-field">
+      <span className="wa-option-field__label" id={labelId}>
+        {label}
+      </span>
+      <div className="wa-option-group" role="group" aria-labelledby={labelId}>
+        {options.map((o) => (
+          <button
+            key={o.value}
+            type="button"
+            className={"wa-option-btn" + (value === o.value ? " wa-option-btn--active" : "")}
+            aria-pressed={value === o.value}
+            disabled={disabled}
+            onClick={() => onChange(o.value)}
+          >
+            {o.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function WritingAssistantPage() {
   const [form, setForm] = useState(initialForm);
   const [result, setResult] = useState("");
@@ -132,31 +160,23 @@ export default function WritingAssistantPage() {
           runGenerate();
         }}
       >
-        <div className="field">
-          <label htmlFor="wa-type">작성 유형</label>
-          <select id="wa-type" value={form.type} onChange={(e) => updateForm({ type: e.target.value })}>
-            {TYPE_OPTIONS.map((o) => (
-              <option key={o.value} value={o.value}>
-                {o.label}
-              </option>
-            ))}
-          </select>
-        </div>
+        <OptionGroup
+          label="작성 유형"
+          idPrefix="wa-type"
+          options={TYPE_OPTIONS}
+          value={form.type}
+          onChange={(v) => updateForm({ type: v })}
+          disabled={loading}
+        />
 
-        <div className="field">
-          <label htmlFor="wa-recipient">받는 사람</label>
-          <select
-            id="wa-recipient"
-            value={form.recipient}
-            onChange={(e) => updateForm({ recipient: e.target.value })}
-          >
-            {RECIPIENT_OPTIONS.map((o) => (
-              <option key={o.value} value={o.value}>
-                {o.label}
-              </option>
-            ))}
-          </select>
-        </div>
+        <OptionGroup
+          label="받는 사람"
+          idPrefix="wa-recipient"
+          options={RECIPIENT_OPTIONS}
+          value={form.recipient}
+          onChange={(v) => updateForm({ recipient: v })}
+          disabled={loading}
+        />
 
         {form.recipient === "other" && (
           <div className="field field--grow">
@@ -170,27 +190,23 @@ export default function WritingAssistantPage() {
           </div>
         )}
 
-        <div className="field">
-          <label htmlFor="wa-tone">말투</label>
-          <select id="wa-tone" value={form.tone} onChange={(e) => updateForm({ tone: e.target.value })}>
-            {TONE_OPTIONS.map((o) => (
-              <option key={o.value} value={o.value}>
-                {o.label}
-              </option>
-            ))}
-          </select>
-        </div>
+        <OptionGroup
+          label="말투"
+          idPrefix="wa-tone"
+          options={TONE_OPTIONS}
+          value={form.tone}
+          onChange={(v) => updateForm({ tone: v })}
+          disabled={loading}
+        />
 
-        <div className="field">
-          <label htmlFor="wa-length">길이</label>
-          <select id="wa-length" value={form.length} onChange={(e) => updateForm({ length: e.target.value })}>
-            {LENGTH_OPTIONS.map((o) => (
-              <option key={o.value} value={o.value}>
-                {o.label}
-              </option>
-            ))}
-          </select>
-        </div>
+        <OptionGroup
+          label="길이"
+          idPrefix="wa-length"
+          options={LENGTH_OPTIONS}
+          value={form.length}
+          onChange={(v) => updateForm({ length: v })}
+          disabled={loading}
+        />
 
         <div className="field field--grow wa-field--content">
           <label htmlFor="wa-content">전달할 내용</label>
