@@ -82,7 +82,7 @@ export default function HomeQuickAssistant() {
         <input
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          placeholder="일정, 업무, 수업, 시간표 변경 등을 말해보세요."
+          placeholder="AI 비서에게 말해보세요."
           disabled={loading}
           aria-label="AI 비서에게 말하기"
         />
