@@ -594,6 +594,38 @@
   color: var(--text-secondary);
 }
 
+/* 저장된 수업 메모 카드 - 종이 질감/회전 없이, 연한 포인트 컬러 배경과 얇은 테두리로만
+   "메모"라는 느낌을 준다(업무 앱에 어울리는 수준, 포스트잇을 흉내 내지 않는다). */
+.pp-note-card {
+  margin-top: 6px;
+  background: var(--accent-soft);
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+
+.pp-note-card__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.pp-note-card__text {
+  margin: 8px 0 0;
+  font-size: 13.5px;
+  color: var(--text-primary);
+  white-space: pre-wrap;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+
+.pp-note-card__foot {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 8px;
+}
+
 /* 저장된 메모 삭제(×) - 삭제 기능이지만 눈에 띄는 큰 빨간 버튼이 아니라 작은 보조
    컨트롤 정도로만 보이게 한다. */
 .pp-class-note__delete {

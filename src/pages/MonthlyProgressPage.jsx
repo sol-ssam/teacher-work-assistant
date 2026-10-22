@@ -430,8 +430,11 @@ export default function MonthlyProgressPage() {
   // 남아야 한다("다음 시간 활동지 배부"처럼 특정 진도 항목과 무관하게 이어지는 메모). 한
   // 사용자 + 한 반당 문서 하나만 유지한다(progress_current와 같은 단순 구조). =====
   const [editingNoteFor, setEditingNoteFor] = useState(null);
-  const [noteDraft, setNoteDraft] = useState("");
-  const [savingNote, setSavingNote] = useState(false);
+  // 저장된 메모가 없는 반은 아코디언을 펼 때 바로 입력창이 보이므로(수정 버튼을 한 번
+  // 더 누를 필요 없음), 여러 반의 draft가 동시에 존재할 수 있다 - className별로 따로
+  // 보관한다. 저장된 메모를 "수정" 중인 draft도 같은 맵의 editingNoteFor 키에 담긴다.
+  const [noteDrafts, setNoteDrafts] = useState({});
+  const [savingNoteFor, setSavingNoteFor] = useState(null);
   const [deletingNoteFor, setDeletingNoteFor] = useState(null);
   // { className, message } 형태로 저장해서, 다른 반 패널에는 이 오류가 번지지 않게 한다.
   const [noteDeleteError, setNoteDeleteError] = useState(null);
@@ -441,6 +444,10 @@ export default function MonthlyProgressPage() {
 
   function noteForClass(className) {
     return notes.find((n) => isSameClass(n.className, className)) || null;
+  }
+
+  function setNoteDraftFor(className, value) {
+    setNoteDrafts((prev) => ({ ...prev, [className]: value }));
   }
 
   // ×/말풍선은 "Firestore에 실제 저장된 메모"만 기준으로 한다 - textarea draft와
@@ -497,20 +504,27 @@ export default function MonthlyProgressPage() {
 
   function startEditNote(className) {
     setEditingNoteFor(className);
-    setNoteDraft(noteForClass(className)?.note || "");
+    setNoteDraftFor(className, noteForClass(className)?.note || "");
   }
 
+  // "취소"는 현재 수정 중인 저장된 메모(editingNoteFor) 하나만 되돌린다 - 저장된 메모가
+  // 없는 반의 입력창(언제나 떠 있는 draft)에는 취소 버튼이 없으므로 여기서 건드리지 않는다.
   function cancelEditNote() {
+    setNoteDrafts((prev) => {
+      if (editingNoteFor == null || !(editingNoteFor in prev)) return prev;
+      const next = { ...prev };
+      delete next[editingNoteFor];
+      return next;
+    });
     setEditingNoteFor(null);
-    setNoteDraft("");
   }
 
   async function saveNote(className) {
     if (!user) return;
-    setSavingNote(true);
+    setSavingNoteFor(className);
     try {
       const now = new Date().toISOString();
-      const trimmed = noteDraft.trim();
+      const trimmed = (noteDrafts[className] ?? "").trim();
       const existing = noteForClass(className);
       if (existing) {
         await updateDocById("progress_class_notes", existing.id, { note: trimmed, updatedAt: now });
@@ -523,10 +537,16 @@ export default function MonthlyProgressPage() {
           updatedAt: now,
         });
       }
-      cancelEditNote();
-      reloadNotes();
+      setEditingNoteFor((prev) => (prev === className ? null : prev));
+      setNoteDrafts((prev) => {
+        if (!(className in prev)) return prev;
+        const next = { ...prev };
+        delete next[className];
+        return next;
+      });
+      await reloadNotes();
     } finally {
-      setSavingNote(false);
+      setSavingNoteFor(null);
     }
   }
 
@@ -1891,62 +1911,69 @@ export default function MonthlyProgressPage() {
                           {gapMsg && <p className="list__meta">{gapMsg.text}</p>}
 
                           {/* 반별 수업 메모 - progress_current.detail과 달리 진행 중 항목이
-                              완료/변경돼도 지워지지 않고 그대로 남는다. */}
+                              완료/변경돼도 지워지지 않고 그대로 남는다. 저장된 메모가 있고
+                              지금 수정 중이 아니면 포스트잇 형태의 카드로, 그 외(메모 없음
+                              또는 수정 중)에는 입력창을 보여준다. */}
                           <div className="pp-class-note">
-                            <div className="pp-class-note__head">
-                              <span className="pp-class-note__label">수업 메모</span>
-                              {classHasSavedNote && (
-                                <button
-                                  type="button"
-                                  className="pp-class-note__delete"
-                                  onClick={() => deleteNote(className)}
-                                  disabled={deletingNoteFor === className}
-                                  aria-label={`${classShortName} 수업 메모 삭제`}
-                                >
-                                  ×
-                                </button>
-                              )}
-                              {editingNoteFor !== className && (
-                                <button type="button" className="btn-text" onClick={() => startEditNote(className)}>
-                                  {noteForClass(className) ? "수정" : "작성"}
-                                </button>
-                              )}
-                            </div>
-                            {noteDeleteError?.className === className && (
-                              <p className="status status--error">{noteDeleteError.message}</p>
-                            )}
-                            {editingNoteFor === className ? (
-                              <div className="form" style={{ marginTop: 6 }}>
-                                <div className="field field--grow">
-                                  <input
-                                    placeholder="예: 다음 시간 활동지 배부"
-                                    value={noteDraft}
-                                    onChange={(e) => setNoteDraft(e.target.value)}
-                                    aria-label="수업 메모"
-                                  />
-                                </div>
-                                <div className="form__actions">
-                                  <button
-                                    className="btn btn--small"
-                                    disabled={savingNote}
-                                    onClick={() => saveNote(className)}
-                                  >
-                                    {savingNote ? "저장 중…" : "저장"}
-                                  </button>
+                            {classHasSavedNote && editingNoteFor !== className ? (
+                              <div className="pp-note-card">
+                                <div className="pp-note-card__head">
+                                  <span className="pp-class-note__label">수업 메모</span>
                                   <button
                                     type="button"
-                                    className="btn btn--ghost btn--small"
-                                    onClick={cancelEditNote}
-                                    disabled={savingNote}
+                                    className="pp-class-note__delete"
+                                    onClick={() => deleteNote(className)}
+                                    disabled={deletingNoteFor === className}
+                                    aria-label={`${classShortName} 수업 메모 삭제`}
                                   >
-                                    취소
+                                    ×
+                                  </button>
+                                </div>
+                                <p className="pp-note-card__text">{noteForClass(className).note}</p>
+                                <div className="pp-note-card__foot">
+                                  <button type="button" className="btn-text" onClick={() => startEditNote(className)}>
+                                    수정
                                   </button>
                                 </div>
                               </div>
                             ) : (
-                              noteForClass(className)?.note && (
-                                <p className="list__meta">{noteForClass(className).note}</p>
-                              )
+                              <>
+                                <div className="pp-class-note__head">
+                                  <span className="pp-class-note__label">수업 메모</span>
+                                </div>
+                                <div className="form" style={{ marginTop: 6 }}>
+                                  <div className="field field--grow">
+                                    <input
+                                      placeholder="예: 다음 시간 활동지 배부"
+                                      value={noteDrafts[className] ?? ""}
+                                      onChange={(e) => setNoteDraftFor(className, e.target.value)}
+                                      aria-label="수업 메모"
+                                    />
+                                  </div>
+                                  <div className="form__actions">
+                                    <button
+                                      className="btn btn--small"
+                                      disabled={savingNoteFor === className}
+                                      onClick={() => saveNote(className)}
+                                    >
+                                      {savingNoteFor === className ? "저장 중…" : "저장"}
+                                    </button>
+                                    {classHasSavedNote && (
+                                      <button
+                                        type="button"
+                                        className="btn btn--ghost btn--small"
+                                        onClick={cancelEditNote}
+                                        disabled={savingNoteFor === className}
+                                      >
+                                        취소
+                                      </button>
+                                    )}
+                                  </div>
+                                </div>
+                              </>
+                            )}
+                            {noteDeleteError?.className === className && (
+                              <p className="status status--error">{noteDeleteError.message}</p>
                             )}
                           </div>
 
