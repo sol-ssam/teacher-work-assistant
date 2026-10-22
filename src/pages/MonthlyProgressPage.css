@@ -627,6 +627,17 @@
   font-weight: 600;
 }
 
+.pp-remaining-range__field {
+  display: flex;
+  align-items: center;
+}
+
+/* PC에서는 "기간 [시작일] → [종료일]"처럼 한 줄로 충분히 읽혀서 각 필드 이름을 따로
+   보여줄 필요가 없다 - 모바일에서 세로로 쌓일 때만(아래 media query) 드러낸다. */
+.pp-remaining-range__field-label {
+  display: none;
+}
+
 .pp-remaining-range input {
   border: 1px solid var(--border-soft);
   background: var(--bg-card);
@@ -634,6 +645,38 @@
   border-radius: 8px;
   padding: 6px 9px;
   font-size: 13px;
+}
+
+/* ===== 실제 남은 수업 횟수 기간 선택 - 모바일: 시작일/종료일을 가로 한 줄에 억지로
+   넣지 않고 세로로 쌓는다. "기간" 라벨과 "→" 구분자는 세로 배치에서는 의미가 없어져
+   각 필드의 "시작일"/"종료일" 라벨로 대체한다. 날짜 계산 로직/state는 그대로다. */
+@media (max-width: 640px) {
+  .pp-remaining-range {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+
+  .pp-remaining-range__label,
+  .pp-remaining-range__arrow {
+    display: none;
+  }
+
+  .pp-remaining-range__field {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 4px;
+    width: 100%;
+  }
+
+  .pp-remaining-range__field-label {
+    display: block;
+    font-weight: 600;
+  }
+
+  .pp-remaining-range input {
+    width: 100%;
+  }
 }
 
 /* Desktop: 담당 반들을 비교하기 쉬운 responsive card grid */

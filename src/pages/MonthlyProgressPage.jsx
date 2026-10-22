@@ -2075,9 +2075,17 @@ export default function MonthlyProgressPage() {
             <h2 className="section__title">실제 남은 수업 횟수</h2>
             <div className="pp-remaining-range">
               <span className="pp-remaining-range__label">기간</span>
-              <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
-              <span aria-hidden="true">→</span>
-              <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
+              <div className="pp-remaining-range__field">
+                <span className="pp-remaining-range__field-label">시작일</span>
+                <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
+              </div>
+              <span className="pp-remaining-range__arrow" aria-hidden="true">
+                →
+              </span>
+              <div className="pp-remaining-range__field">
+                <span className="pp-remaining-range__field-label">종료일</span>
+                <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
+              </div>
             </div>
 
             {classesInGrade.length === 0 && (
