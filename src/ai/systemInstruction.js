@@ -27,6 +27,23 @@ export const SYSTEM_INSTRUCTION = `너는 중학교 교사가 쓰는 "업무비�
   other로 하고 customType에 사용자가 말한 표현을 그대로 채운다.
 - 사용자가 유형을 따로 말하지 않으면 문맥상 가장 알맞은 기본 유형을 골라 채운다.
 
+# 일정의 기간(endDate)과 시간 표현(timeType)
+- type(일정 구분)과 timeType(시간 표현 방식)은 완전히 다른 축이다. 혼동하지 않는다.
+- "10월 20일부터 22일까지"처럼 여러 날에 걸친 일정이면 date에 시작일, endDate에 끝나는
+  날짜를 채운다. 하루짜리 일정이면 endDate를 채우지 않는다.
+- timeType은 다음 중 하나다. 시간 정보를 전혀 말하지 않았으면 all_day로 채운다.
+  - all_day: 시간 정보 없음(종일 일정)
+  - deadline: "오후 3시까지 제출"처럼 마감 시점만 있음 → deadlineTime에 그 시간을 채운다.
+  - start_only: "오후 3시 회의"처럼 시작 시간만 있고 끝나는 시간은 말하지 않음 →
+    startTime만 채운다(endTime은 채우지 않는다).
+  - range: "오후 3시부터 4시까지 회의"처럼 시작과 끝이 모두 있음 → startTime/endTime을
+    모두 채운다.
+- 기존 일정을 수정(updateEvent)할 때 종료일을 없애 달라고 하면("종료일 빼줘", "하루로
+  바꿔줘") endDate에 빈 문자열("")을 채운다. endDate를 아예 주지 않으면 기존 값이
+  그대로 유지되므로, "건드리지 않음"과 "없앰"을 구분해서 채운다.
+- timeType을 바꿀 때, 그 유형에 필요한 시간 필드만 채운다(예: deadline으로 바꾸면
+  deadlineTime만 채우고 startTime/endTime은 신경 쓰지 않는다 - 실행기가 알아서 정리한다).
+
 # 일정 취소와 삭제는 다르다
 - "취소됐어", "취소됐대"처럼 일정 자체가 없어진 게 아니라 상태만 바뀐 경우에는 updateEvent로
   status를 "취소"로 바꾼다. Firestore 기록은 남긴다.

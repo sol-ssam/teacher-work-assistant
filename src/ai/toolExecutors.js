@@ -7,7 +7,7 @@ import {
 import { todayDateString, todayWeekdayKorean, endOfMonthDateString } from "../utils/date";
 import { createCalendarEvent, deleteCalendarEvent, listCalendarEvents, MissingEndTimeError } from "../calendar/calendarApi";
 import { isCalendarEligible } from "../utils/calendarEligibility";
-import { ATTENDANCE_BASED_EVENT_TYPES } from "../utils/constants";
+import { ATTENDANCE_BASED_EVENT_TYPES, resolveEventTimeType, effectiveEventEndDate } from "../utils/constants";
 import {
   analyzeClassProgress,
   compareClassesInGrade,
@@ -37,8 +37,11 @@ function trimEvent(e) {
     id: e.id,
     title: e.title,
     date: e.date,
+    endDate: e.endDate || undefined,
+    timeType: e.timeType || undefined,
     startTime: e.startTime,
     endTime: e.endTime,
+    deadlineTime: e.deadlineTime || undefined,
     type: e.type,
     customType: e.customType || undefined,
     attending: e.attending ?? undefined,
@@ -67,6 +70,15 @@ async function execAddEvent(args, uid, calendarHelpers) {
   const attending = ATTENDANCE_BASED_EVENT_TYPES.includes(args.type) ? (typeof args.attending === "boolean" ? args.attending : null) : null;
   const eligible = isCalendarEligible({ type: args.type, attending });
 
+  // Gemini가 timeType을 아예 채우지 않았으면(시간 정보를 전혀 말하지 않은 경우)
+  // 기존 일정과 같은 규칙으로 추론한다 - "시간 정보가 없으면 all_day"가 그 추론의
+  // 기본값이다. 이 timeType에서 쓰지 않는 시간 필드는 저장하지 않는다(판정에 혼동 없게).
+  const timeType = args.timeType || resolveEventTimeType({ startTime: args.startTime, endTime: args.endTime, deadlineTime: args.deadlineTime });
+  const startTime = timeType === "start_only" || timeType === "range" ? args.startTime || "" : "";
+  const endTime = timeType === "range" ? args.endTime || "" : "";
+  const deadlineTime = timeType === "deadline" ? args.deadlineTime || "" : "";
+  const endDate = args.endDate || "";
+
   let calendarSync = false;
   let googleCalendarId = null;
   let calendarNote;
@@ -82,8 +94,10 @@ async function execAddEvent(args, uid, calendarHelpers) {
         googleCalendarId = await createCalendarEvent(token, {
           title: args.title,
           date: args.date,
-          startTime: args.startTime,
-          endTime: args.endTime,
+          endDate,
+          timeType,
+          startTime,
+          endTime,
           memo: args.memo,
         });
         calendarSync = true;
@@ -106,8 +120,11 @@ async function execAddEvent(args, uid, calendarHelpers) {
   const id = await createDoc("events", uid, {
     title: args.title,
     date: args.date,
-    startTime: args.startTime ?? "",
-    endTime: args.endTime ?? "",
+    endDate,
+    timeType,
+    startTime,
+    endTime,
+    deadlineTime,
     type: args.type,
     customType: args.type === "other" ? args.customType ?? "" : "",
     status: "예정",
@@ -125,16 +142,33 @@ async function execAddEvent(args, uid, calendarHelpers) {
     id,
     title: args.title,
     date: args.date,
+    endDate: endDate || undefined,
     calendarSync,
     ...(calendarNote ? { calendarNote } : {}),
   };
 }
+
+// timeType별로 의미가 없는 시간 필드. updateEvent가 timeType을 바꿀 때, 이번 호출에서
+// 같이 주지 않은 필드만 비워서 예전 값이 남아 판정에 혼동을 주지 않게 한다(예: range →
+// all_day로 바꾸면서 deadlineTime을 따로 주지 않았으면, 예전 startTime/endTime을 지운다).
+const IRRELEVANT_TIME_FIELDS_BY_TYPE = {
+  all_day: ["startTime", "endTime", "deadlineTime"],
+  deadline: ["startTime", "endTime"],
+  start_only: ["endTime", "deadlineTime"],
+  range: ["deadlineTime"],
+};
 
 async function execUpdateEvent(args, uid) {
   const { eventId, ...fields } = args;
   const events = await listDocsByOwner("events", uid);
   const target = events.find((e) => e.id === eventId);
   if (!target) return { success: false, reason: "해당 id의 일정을 찾을 수 없습니다." };
+
+  if (fields.timeType && IRRELEVANT_TIME_FIELDS_BY_TYPE[fields.timeType]) {
+    for (const key of IRRELEVANT_TIME_FIELDS_BY_TYPE[fields.timeType]) {
+      if (!(key in fields)) fields[key] = "";
+    }
+  }
 
   await updateDocById("events", eventId, { ...fields, updatedAt: new Date().toISOString() });
   return { success: true, id: eventId };
@@ -219,6 +253,8 @@ async function execSyncEventToCalendar(args, uid, calendarHelpers) {
     const googleCalendarId = await createCalendarEvent(token, {
       title: target.title,
       date: target.date,
+      endDate: target.endDate,
+      timeType: target.timeType,
       startTime: target.startTime,
       endTime: target.endTime,
       memo: target.memo,
@@ -242,8 +278,12 @@ async function execSearchEvents(args, uid) {
   const dateFrom = args.dateFrom || todayDateString();
   const dateTo = args.dateTo || dateFrom;
   const all = await listDocsByOwner("events", uid);
+  // 기간 일정은 검색 범위와 일정 기간이 하루라도 겹치면 포함한다(overlap) - 일정이
+  // 검색 시작 전에 끝나지 않았고(effectiveEventEndDate >= dateFrom), 검색 종료 후에
+  // 시작하지도 않았으면(e.date <= dateTo) 겹친다. endDate가 없는 기존 일정은
+  // effectiveEventEndDate가 date와 같아 기존의 단일 날짜 비교와 동일하게 동작한다.
   const filtered = all
-    .filter((e) => e.date >= dateFrom && e.date <= dateTo)
+    .filter((e) => e.date <= dateTo && effectiveEventEndDate(e) >= dateFrom)
     .filter((e) => !args.type || e.type === args.type)
     .sort((a, b) => `${a.date}${a.startTime ?? ""}`.localeCompare(`${b.date}${b.startTime ?? ""}`))
     .slice(0, MAX_RESULTS);

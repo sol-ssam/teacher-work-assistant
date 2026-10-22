@@ -9,7 +9,14 @@ import {
   parseAttendingValue,
   attendingToSelectValue,
 } from "../utils/calendarEligibility";
-import { EVENT_TYPES, ATTENDANCE_BASED_EVENT_TYPES, eventTypeDisplayLabel } from "../utils/constants";
+import {
+  EVENT_TYPES,
+  ATTENDANCE_BASED_EVENT_TYPES,
+  EVENT_TIME_TYPES,
+  eventTypeDisplayLabel,
+  resolveEventTimeType,
+  effectiveEventEndDate,
+} from "../utils/constants";
 import { formatDateDisplay, weekdayKoreanOf, todayDateString } from "../utils/date";
 import { useFieldErrors, isBlank, isTimeBefore } from "../utils/formValidation";
 import Modal from "../components/Modal";
@@ -20,8 +27,11 @@ import "./EventsPage.css";
 const emptyForm = {
   title: "",
   date: "",
+  endDate: "",
+  timeType: "all_day",
   startTime: "",
   endTime: "",
+  deadlineTime: "",
   type: "personal",
   customType: "",
   status: "예정",
@@ -30,14 +40,20 @@ const emptyForm = {
   addToCalendar: false,
 };
 
-// 일정 저장 전 확인하는 조건: 제목/날짜 필수, 종료 시간은 시작 시간 이후, "기타" 구분은
-// 직접 입력 필수. Firestore에 실제로 어떤 값이 저장되는지는 그대로 두고, 저장을 시도하기
-// 전에 이 조건을 만족하는지만 화면에서 먼저 확인한다.
+// 일정 저장 전 확인하는 조건: 제목/날짜 필수, 종료일은 시작일 이후, 종료 시간은 시작
+// 시간 이후, "기타" 구분은 직접 입력 필수. Firestore에 실제로 어떤 값이 저장되는지는
+// 그대로 두고, 저장을 시도하기 전에 이 조건을 만족하는지만 화면에서 먼저 확인한다.
 function validateEventForm(values) {
   const errors = {};
   if (isBlank(values.title)) errors.title = "제목을 입력해 주세요.";
   if (isBlank(values.date)) errors.date = "날짜를 선택해 주세요.";
-  if (isTimeBefore(values.startTime, values.endTime)) {
+  if (!isBlank(values.endDate) && !isBlank(values.date) && values.endDate < values.date) {
+    errors.endDate = "종료일은 시작일보다 빠를 수 없습니다.";
+  }
+  // startTime/endTime은 timeType이 range일 때만 화면에 보인다 - 다른 유형으로 바꾼 뒤에도
+  // 이전에 입력했던 값이 폼 state에 남아 있을 수 있으므로, 보이지 않는 필드를 기준으로
+  // 제출을 막지 않도록 range일 때만 이 검증을 적용한다.
+  if (values.timeType === "range" && isTimeBefore(values.startTime, values.endTime)) {
     errors.endTime = "종료 시간은 시작 시간 이후로 설정해 주세요.";
   }
   if (values.type === "other" && isBlank(values.customType)) {
@@ -93,28 +109,71 @@ function EventFormFields({
         />
         <FieldError id={id("date-error")} message={errors.date} />
       </div>
+      <div className={"field" + (errors.endDate ? " field--invalid" : "")}>
+        <label htmlFor={id("endDate")}>종료일(선택)</label>
+        <input
+          id={id("endDate")}
+          ref={registerField("endDate")}
+          type="date"
+          min={values.date || undefined}
+          aria-invalid={!!errors.endDate}
+          aria-describedby={errors.endDate ? id("endDate-error") : undefined}
+          value={values.endDate}
+          onChange={(e) => onChange({ ...values, endDate: e.target.value })}
+        />
+        <FieldError id={id("endDate-error")} message={errors.endDate} />
+      </div>
       <div className="field">
-        <label htmlFor={id("startTime")}>시작</label>
-        <input
-          id={id("startTime")}
-          type="time"
-          value={values.startTime}
-          onChange={(e) => onChange({ ...values, startTime: e.target.value })}
-        />
+        <label htmlFor={id("timeType")}>일정 시간</label>
+        <select
+          id={id("timeType")}
+          value={values.timeType}
+          onChange={(e) => onChange({ ...values, timeType: e.target.value })}
+        >
+          {EVENT_TIME_TYPES.map((t) => (
+            <option key={t.value} value={t.value}>
+              {t.label}
+            </option>
+          ))}
+        </select>
       </div>
-      <div className={"field" + (errors.endTime ? " field--invalid" : "")}>
-        <label htmlFor={id("endTime")}>종료</label>
-        <input
-          id={id("endTime")}
-          ref={registerField("endTime")}
-          type="time"
-          aria-invalid={!!errors.endTime}
-          aria-describedby={errors.endTime ? id("endTime-error") : undefined}
-          value={values.endTime}
-          onChange={(e) => onChange({ ...values, endTime: e.target.value })}
-        />
-        <FieldError id={id("endTime-error")} message={errors.endTime} />
-      </div>
+      {values.timeType === "deadline" && (
+        <div className="field">
+          <label htmlFor={id("deadlineTime")}>마감 시간</label>
+          <input
+            id={id("deadlineTime")}
+            type="time"
+            value={values.deadlineTime}
+            onChange={(e) => onChange({ ...values, deadlineTime: e.target.value })}
+          />
+        </div>
+      )}
+      {(values.timeType === "start_only" || values.timeType === "range") && (
+        <div className="field">
+          <label htmlFor={id("startTime")}>시작</label>
+          <input
+            id={id("startTime")}
+            type="time"
+            value={values.startTime}
+            onChange={(e) => onChange({ ...values, startTime: e.target.value })}
+          />
+        </div>
+      )}
+      {values.timeType === "range" && (
+        <div className={"field" + (errors.endTime ? " field--invalid" : "")}>
+          <label htmlFor={id("endTime")}>종료</label>
+          <input
+            id={id("endTime")}
+            ref={registerField("endTime")}
+            type="time"
+            aria-invalid={!!errors.endTime}
+            aria-describedby={errors.endTime ? id("endTime-error") : undefined}
+            value={values.endTime}
+            onChange={(e) => onChange({ ...values, endTime: e.target.value })}
+          />
+          <FieldError id={id("endTime-error")} message={errors.endTime} />
+        </div>
+      )}
       <div className="field">
         <label htmlFor={id("type")}>구분</label>
         <select id={id("type")} value={values.type} onChange={(e) => onChange({ ...values, type: e.target.value })}>
@@ -271,8 +330,13 @@ export default function EventsPage() {
     setEditForm({
       title: ev.title ?? "",
       date: ev.date ?? "",
+      endDate: ev.endDate ?? "",
+      // 기존(timeType 없는) 일정도 startTime/endTime 조합에서 같은 의미를 추론해 폼에
+      // 정상 반영한다 - 수정 화면을 열었을 때 "하루 종일"로 잘못 보이는 일이 없게 한다.
+      timeType: resolveEventTimeType(ev),
       startTime: ev.startTime ?? "",
       endTime: ev.endTime ?? "",
+      deadlineTime: ev.deadlineTime ?? "",
       type: ev.type ?? "personal",
       customType: ev.customType ?? "",
       status: ev.status ?? "예정",
@@ -310,11 +374,22 @@ export default function EventsPage() {
     const attending = isAttendanceBasedType ? parseAttendingValue(formState.attending) : null;
     const eligibleNow = isCalendarEligible({ type: formState.type, attending });
 
+    // 이 timeType에서 쓰지 않는 시간 필드는 저장하지 않는다 - range → all_day로 바꾼
+    // 뒤에도 예전 startTime/endTime이 남아 판정(화면 표시/Calendar 변환)에 혼동을 주지
+    // 않게 한다.
+    const timeType = formState.timeType || "all_day";
+    const startTime = timeType === "start_only" || timeType === "range" ? formState.startTime || "" : "";
+    const endTime = timeType === "range" ? formState.endTime || "" : "";
+    const deadlineTime = timeType === "deadline" ? formState.deadlineTime || "" : "";
+
     const basePayload = {
       title: formState.title,
       date: formState.date,
-      startTime: formState.startTime || "",
-      endTime: formState.endTime || "",
+      endDate: formState.endDate || "",
+      timeType,
+      startTime,
+      endTime,
+      deadlineTime,
       type: formState.type,
       customType: formState.type === "other" ? formState.customType || "" : "",
       status: formState.status,
@@ -422,10 +497,13 @@ export default function EventsPage() {
   const today = todayDateString();
   // Asia/Seoul 기준 오늘 날짜(todayDateString)로만 비교한다 - 브라우저 UTC 때문에 날짜가
   // 하루씩 밀리는 문제를 피하려고 이 프로젝트 전역에서 이미 쓰는 helper를 그대로 쓴다.
-  const upcomingVisible = visible.filter((e) => (e.date || "") >= today);
+  // 기간 일정은 "끝나는 날"(effectiveEventEndDate) 기준으로 분류한다 - 아직 끝나지
+  // 않았으면(오늘 포함 진행 중이어도) 다가오는 일정이고, 끝의 지나야만 지난 일정이다.
+  // endDate가 없는 기존 일정은 effectiveEventEndDate가 date와 같아 기존 동작과 같다.
+  const upcomingVisible = visible.filter((e) => effectiveEventEndDate(e) >= today);
   // events는 load()에서 이미 날짜+시간 오름차순으로 정렬되어 있다 - 지난 일정은 그 배열을
   // 뒤집기만 하면 가장 최근 날짜가 먼저 오는 순서가 된다.
-  const pastVisible = visible.filter((e) => (e.date || "") < today).reverse();
+  const pastVisible = visible.filter((e) => effectiveEventEndDate(e) < today).reverse();
 
   function formatGroupDate(dateStr) {
     if (!dateStr) return "";
@@ -519,6 +597,24 @@ export default function EventsPage() {
   function shortDate(dateStr) {
     const [, m, d] = (dateStr || "").split("-");
     return m && d ? `${Number(m)}.${Number(d)}` : dateStr || "";
+  }
+
+  // 기간 일정이면 "9.18~9.20"처럼 끝나는 날까지 짧게 표기한다. 단일 날짜 일정(endDate
+  // 없음 또는 date와 같음)은 기존과 똑같이 시작일만 보여준다.
+  function shortDateRange(ev) {
+    const start = shortDate(ev.date);
+    if (!ev.endDate || ev.endDate === ev.date) return start;
+    return `${start}~${shortDate(ev.endDate)}`;
+  }
+
+  // timeType별로 보여줄 시간 문구. 기존(timeType 없는) 일정은 resolveEventTimeType이
+  // startTime/endTime 조합에서 같은 의미를 추론하므로 동일하게 동작한다.
+  function eventTimeLabel(ev) {
+    const t = resolveEventTimeType(ev);
+    if (t === "deadline") return ev.deadlineTime ? `${ev.deadlineTime} 마감` : "";
+    if (t === "start_only") return ev.startTime || "";
+    if (t === "range") return ev.startTime ? `${ev.startTime}${ev.endTime ? ` – ${ev.endTime}` : ""}` : "";
+    return "";
   }
 
   // 인라인 수정 form - "다가오는 일정"의 큰 카드에서도, "지난 일정"의 compact row에서도
@@ -671,17 +767,23 @@ export default function EventsPage() {
                                       <div className="ep-row__text">
                                         <p className="ep-row__title">{ev.title}</p>
                                         <p className="ep-row__meta">
-                                          {ev.startTime && `${ev.startTime}${ev.endTime ? ` – ${ev.endTime}` : ""}`}
-                                          {ATTENDANCE_BASED_EVENT_TYPES.includes(ev.type) &&
-                                            `${ev.startTime ? " · " : ""}${
-                                              ev.attending === true
+                                          {[
+                                            ev.endDate && ev.endDate !== ev.date
+                                              ? `${formatDateDisplay(ev.date)} ~ ${formatDateDisplay(ev.endDate)}`
+                                              : null,
+                                            eventTimeLabel(ev) || null,
+                                            ATTENDANCE_BASED_EVENT_TYPES.includes(ev.type)
+                                              ? ev.attending === true
                                                 ? "참석"
                                                 : ev.attending === false
                                                 ? "불참"
                                                 : "참석 여부 미정"
-                                            }`}
-                                          {ev.memo ? ` · ${ev.memo}` : ""}
-                                          {ev.status && ev.status !== "예정" ? ` · ${ev.status}` : ""}
+                                              : null,
+                                            ev.memo || null,
+                                            ev.status && ev.status !== "예정" ? ev.status : null,
+                                          ]
+                                            .filter(Boolean)
+                                            .join(" · ")}
                                         </p>
                                         {ev.calendarSync && (
                                           <span className="ep-row__calendar">📅 Calendar 연동됨</span>
@@ -732,15 +834,13 @@ export default function EventsPage() {
                             renderEditForm(ev)
                           ) : (
                             <div className="ep-history-row" key={ev.id}>
-                              <span className="ep-history-row__date">{shortDate(ev.date)}</span>
+                              <span className="ep-history-row__date">{shortDateRange(ev)}</span>
                               <span className={`badge badge--${ev.type}`}>{eventTypeDisplayLabel(ev)}</span>
                               {ev.status && ev.status !== "예정" && (
                                 <span className="ep-history-row__status">{ev.status}</span>
                               )}
                               <span className="ep-history-row__title">{ev.title}</span>
-                              <span className="ep-history-row__time">
-                                {ev.startTime && `${ev.startTime}${ev.endTime ? ` – ${ev.endTime}` : ""}`}
-                              </span>
+                              <span className="ep-history-row__time">{eventTimeLabel(ev)}</span>
                               <span className="ep-history-row__actions">
                                 <button className="btn-text" onClick={() => startEdit(ev)}>
                                   수정

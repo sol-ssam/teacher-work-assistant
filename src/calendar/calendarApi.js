@@ -1,4 +1,5 @@
 import { addDaysToDateString } from "../utils/date";
+import { resolveEventTimeType } from "../utils/constants";
 
 const CALENDAR_ID = "primary";
 const BASE_URL = `https://www.googleapis.com/calendar/v3/calendars/${CALENDAR_ID}/events`;
@@ -14,38 +15,44 @@ export class MissingEndTimeError extends Error {
   }
 }
 
-// 규칙(임의 추측 금지):
-// - 시작/종료 시간이 모두 있음 → timed event
-// - 시작/종료 시간이 모두 없음 → all-day event (날짜만 있는 일정)
-// - 시작 시간만 있고 종료 시간이 없음 → Google Calendar에 생성하지 않는다.
-//   종료 시간을 임의로 만들거나 all-day로 바꾸지 않고, MissingEndTimeError를 던진다.
-function toGoogleEventBody({ title, date, startTime, endTime, memo }) {
-  if (startTime && endTime) {
-    return {
-      summary: title,
-      description: memo || undefined,
-      start: { dateTime: `${date}T${startTime}:00`, timeZone: TIME_ZONE },
-      end: { dateTime: `${date}T${endTime}:00`, timeZone: TIME_ZONE },
-    };
-  }
+// timeType(기존 데이터는 없으면 startTime/endTime 조합으로 추론 - resolveEventTimeType)
+// 기준 규칙(임의 추측 금지):
+// - all_day: 날짜(들)만 있는 종일 일정. endDate가 있으면 기간 종일 일정이다.
+// - range: 시작/종료 시간이 모두 있는 timed event. endDate가 있으면 기간의 마지막 날
+//   endTime에 끝난다(예: 10/20 09:00 ~ 10/22 17:00).
+// - start_only / deadline: 끝나는 시점에 대한 정보가 없다(시작 시간 또는 마감 시간
+//   하나뿐). 종료 시간을 임의로 만들거나 all-day로 바꾸지 않고, 기존과 같은 원칙으로
+//   MissingEndTimeError를 던진다 - 사용자가 종료 시간을 직접 입력해야 Calendar에 들어간다.
+function toGoogleEventBody({ title, date, endDate, timeType, startTime, endTime, memo }) {
+  const resolvedType = resolveEventTimeType({ timeType, startTime, endTime });
+  const rangeEndDate = endDate || date;
 
-  if (!startTime && !endTime) {
-    // 시간 정보가 아예 없는, 날짜만 있는 일정 → all-day로 등록한다. Google Calendar는
-    // all-day 이벤트의 end.date를 "다음 날"로 요구한다(종료일이 배타적/exclusive).
-    const nextDay = new Date(`${date}T00:00:00Z`);
+  if (resolvedType === "all_day") {
+    // Google Calendar는 all-day 이벤트의 end.date를 "다음 날"로 요구한다(종료일이
+    // 배타적/exclusive) - 기간 일정도 마지막 날의 "다음 날"을 end.date로 쓴다.
+    const nextDay = new Date(`${rangeEndDate}T00:00:00Z`);
     nextDay.setUTCDate(nextDay.getUTCDate() + 1);
-    const endDate = nextDay.toISOString().slice(0, 10);
+    const googleEndDate = nextDay.toISOString().slice(0, 10);
 
     return {
       summary: title,
       description: memo || undefined,
       start: { date },
-      end: { date: endDate },
+      end: { date: googleEndDate },
     };
   }
 
-  // 시작 시간만 있고 종료 시간이 없는 경우: 임의로 종료 시간을 만들거나 all-day로
-  // 바꾸지 않는다. 사용자가 종료 시간을 직접 입력해야 한다.
+  if (resolvedType === "range") {
+    if (!(startTime && endTime)) throw new MissingEndTimeError();
+    return {
+      summary: title,
+      description: memo || undefined,
+      start: { dateTime: `${date}T${startTime}:00`, timeZone: TIME_ZONE },
+      end: { dateTime: `${rangeEndDate}T${endTime}:00`, timeZone: TIME_ZONE },
+    };
+  }
+
+  // start_only / deadline
   throw new MissingEndTimeError();
 }
 

@@ -26,6 +26,34 @@ export function eventTypeDisplayLabel(event) {
   return EVENT_TYPE_LABEL[event?.type] ?? event?.type ?? "";
 }
 
+// 일정의 "시간 표현 방식". 기존 type(학사일정/회의/...)과는 완전히 다른 축이라 혼동하지
+// 않는다 - type은 분류, timeType은 그 일정에 시작/종료/마감 시간이 어떻게 적용되는지다.
+export const EVENT_TIME_TYPES = [
+  { value: "all_day", label: "하루 종일" },
+  { value: "deadline", label: "마감 시간" },
+  { value: "start_only", label: "시작 시간만" },
+  { value: "range", label: "시작~종료 시간" },
+];
+
+// 기존(구버전) 일정에는 timeType 필드 자체가 없다. 이 함수는 그런 일정도 오류 없이
+// 정상 동작하도록, 있던 startTime/endTime 조합만으로 같은 의미를 추론한다. timeType이
+// 명시돼 있으면 그 값을 그대로 쓴다(사용자가 명시적으로 고른 값이 항상 우선한다) -
+// 추론은 오직 그 필드가 아예 없는 기존 데이터를 위한 fallback일 뿐이다.
+export function resolveEventTimeType(event) {
+  if (event?.timeType) return event.timeType;
+  if (event?.deadlineTime) return "deadline";
+  if (event?.startTime && event?.endTime) return "range";
+  if (event?.startTime) return "start_only";
+  return "all_day";
+}
+
+// 일정이 실제로 "끝나는" 날짜. endDate가 없으면(기존 단일 날짜 일정 포함) date와 같다 -
+// 모든 날짜 판정(오늘/다가오는/지난/검색)이 이 함수 하나만 거치면 기간 일정과 기존
+// 단일 날짜 일정을 똑같은 규칙으로 다룰 수 있다.
+export function effectiveEventEndDate(event) {
+  return event?.endDate || event?.date || "";
+}
+
 export const TASK_PRIORITIES = [
   { value: "high", label: "높음" },
   { value: "medium", label: "보통" },

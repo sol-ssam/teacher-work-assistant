@@ -15,6 +15,13 @@ const prioritySchema = Schema.enumString({
   enum: ["high", "medium", "low"],
 });
 
+// 일정의 "시간 표현 방식". 분류(eventTypeSchema)와는 완전히 다른 축이다.
+const timeTypeSchema = Schema.enumString({
+  description:
+    "일정의 시간 표현 방식. all_day=하루 종일(시간 정보 없음), deadline=마감 시간만 있음(deadlineTime 사용), start_only=시작 시간만 있음(startTime 사용, 종료 시간 없음), range=시작~종료 시간이 모두 있음(startTime/endTime 사용). 시간 정보를 전혀 말하지 않았으면 all_day로 채운다.",
+  enum: ["all_day", "deadline", "start_only", "range"],
+});
+
 const dateSchema = (description) => Schema.string({ description: `${description} (YYYY-MM-DD 형식)` });
 
 export const addEventDeclaration = {
@@ -24,9 +31,16 @@ export const addEventDeclaration = {
   parameters: Schema.object({
     properties: {
       title: Schema.string({ description: "일정 제목" }),
-      date: dateSchema("일정 날짜"),
-      startTime: Schema.string({ description: "시작 시간 (HH:MM, 24시간제)" }),
-      endTime: Schema.string({ description: "종료 시간 (HH:MM, 24시간제)" }),
+      date: dateSchema("일정 시작 날짜"),
+      endDate: dateSchema(
+        "기간 일정의 끝나는 날짜 (선택). '10월 20일부터 22일까지'처럼 여러 날에 걸친 일정일 때만 채운다. 하루짜리 일정이면 채우지 않는다. date보다 빠를 수 없다."
+      ),
+      timeType: timeTypeSchema,
+      startTime: Schema.string({ description: "시작 시간 (HH:MM, 24시간제). timeType이 start_only 또는 range일 때 사용." }),
+      endTime: Schema.string({ description: "종료 시간 (HH:MM, 24시간제). timeType이 range일 때만 사용." }),
+      deadlineTime: Schema.string({
+        description: "마감 시간 (HH:MM, 24시간제). timeType이 deadline일 때만 사용(예: '오후 3시까지 제출' → 15:00).",
+      }),
       type: eventTypeSchema,
       customType: Schema.string({
         description:
@@ -42,7 +56,17 @@ export const addEventDeclaration = {
       }),
       memo: Schema.string({ description: "짧은 메모 (선택)" }),
     },
-    optionalProperties: ["startTime", "endTime", "customType", "attending", "addToCalendar", "memo"],
+    optionalProperties: [
+      "endDate",
+      "timeType",
+      "startTime",
+      "endTime",
+      "deadlineTime",
+      "customType",
+      "attending",
+      "addToCalendar",
+      "memo",
+    ],
   }),
 };
 
@@ -54,9 +78,15 @@ export const updateEventDeclaration = {
     properties: {
       eventId: Schema.string({ description: "수정할 일정의 id (searchEvents 결과에서 얻음)" }),
       title: Schema.string({ description: "새 제목 (변경 시)" }),
-      date: dateSchema("새 날짜 (변경 시)"),
+      date: dateSchema("새 시작 날짜 (변경 시)"),
+      endDate: Schema.string({
+        description:
+          "기간 일정의 끝나는 날짜 (변경 시, YYYY-MM-DD). 종료일을 새로 추가/변경할 때 이 값을 채운다. 기존에 있던 종료일을 없애서 다시 하루짜리 일정으로 되돌리려면(예: '종료일 빼줘') 빈 문자열 \"\"을 채운다 - 이 필드를 아예 주지 않으면 기존 종료일이 그대로 유지된다.",
+      }),
+      timeType: timeTypeSchema,
       startTime: Schema.string({ description: "새 시작 시간 (변경 시)" }),
       endTime: Schema.string({ description: "새 종료 시간 (변경 시)" }),
+      deadlineTime: Schema.string({ description: "새 마감 시간 (변경 시). timeType이 deadline일 때 사용." }),
       type: eventTypeSchema,
       customType: Schema.string({
         description: "type을 other(기타)로 바꿀 때만 사용. 사용자가 말한 구분명을 채운다.",
@@ -70,8 +100,11 @@ export const updateEventDeclaration = {
     optionalProperties: [
       "title",
       "date",
+      "endDate",
+      "timeType",
       "startTime",
       "endTime",
+      "deadlineTime",
       "type",
       "customType",
       "attending",
