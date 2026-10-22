@@ -513,16 +513,26 @@ export default function EventsPage() {
     return isThisYear ? withWeekday : `${dateStr.slice(0, 4)}년 ${withWeekday}`;
   }
 
+  // 그룹 제목. 기간 일정(endDate가 date와 다름)은 시작일과 끝나는 날을 "~"로 이어
+  // 보여준다(화살표 아님) - 카드를 열기 전에도 한눈에 기간임을 알 수 있게 한다. 단일
+  // 날짜(endDate 없음 또는 date와 같음)는 기존 표시 그대로다.
+  function formatGroupDateRange(dateStr, endDateStr) {
+    if (!endDateStr || endDateStr === dateStr) return formatGroupDate(dateStr);
+    return `${formatGroupDate(dateStr)} ~ ${formatGroupDate(endDateStr)}`;
+  }
+
   // 날짜 기준 grouping (다가오는 일정 카드 - 기존 UI 그대로) - Firestore 구조는 그대로 두고
-  // 표시할 때만 묶는다.
+  // 표시할 때만 묶는다. (date, endDate) 조합이 같은 일정만 한 그룹으로 묶는다 - 그래야
+  // 같은 시작일이라도 기간이 다른 일정이 하나의 날짜 제목 아래 뒤섞이지 않는다.
   function groupByDate(items) {
     const dateGroups = [];
     for (const ev of items) {
+      const endDate = ev.endDate || ev.date;
       const last = dateGroups[dateGroups.length - 1];
-      if (last && last.date === ev.date) {
+      if (last && last.date === ev.date && last.endDate === endDate) {
         last.items.push(ev);
       } else {
-        dateGroups.push({ date: ev.date, items: [ev] });
+        dateGroups.push({ date: ev.date, endDate, items: [ev] });
       }
     }
     return dateGroups;
@@ -754,8 +764,8 @@ export default function EventsPage() {
                     {monthExpanded && (
                       <div className="ep-groups">
                         {groupByDate(mg.items).map((group) => (
-                          <section className="ep-group" key={group.date}>
-                            <h2 className="ep-group__date">{formatGroupDate(group.date)}</h2>
+                          <section className="ep-group" key={`${group.date}_${group.endDate}`}>
+                            <h2 className="ep-group__date">{formatGroupDateRange(group.date, group.endDate)}</h2>
                             <div className="ep-list">
                               {group.items.map((ev) =>
                                 editingId === ev.id ? (
@@ -767,10 +777,9 @@ export default function EventsPage() {
                                       <div className="ep-row__text">
                                         <p className="ep-row__title">{ev.title}</p>
                                         <p className="ep-row__meta">
+                                          {/* 기간(시작~종료)은 이미 카드 상단 날짜 제목(formatGroupDateRange)에
+                                              나와 있으므로 여기서는 중복 표시하지 않는다. */}
                                           {[
-                                            ev.endDate && ev.endDate !== ev.date
-                                              ? `${formatDateDisplay(ev.date)} ~ ${formatDateDisplay(ev.endDate)}`
-                                              : null,
                                             eventTimeLabel(ev) || null,
                                             ATTENDANCE_BASED_EVENT_TYPES.includes(ev.type)
                                               ? ev.attending === true

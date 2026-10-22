@@ -125,6 +125,10 @@
   font-weight: 700;
   color: var(--text-primary);
   margin: 0 0 10px;
+  /* 기간 일정은 "10월 20일(화) ~ 10월 22일(목)"처럼 길어질 수 있다 - 좁은 화면에서
+     카드 밖으로 넘치지 않고 자연스럽게 줄바꿈되게 한다(한국어라 break-all은 쓰지 않는다). */
+  word-break: keep-all;
+  overflow-wrap: break-word;
 }
 
 .ep-list {
