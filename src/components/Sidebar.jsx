@@ -37,6 +37,12 @@ const IconSpark = () => (
     <path d="M12 3v4M12 17v4M4.5 12h4M15.5 12h4M6.5 6.5l2.5 2.5M15 15l2.5 2.5M17.5 6.5 15 9M9 15l-2.5 2.5" />
   </Icon>
 );
+const IconPencil = () => (
+  <Icon>
+    <path d="M4 20l1.2-4.2L15.5 5.5a1.5 1.5 0 0 1 2.1 0l1 1a1.5 1.5 0 0 1 0 2.1L8.3 18.8 4 20Z" />
+    <path d="M13.8 7.2l2.3 2.3" />
+  </Icon>
+);
 const IconGrid = () => (
   <Icon>
     <rect x="4" y="4" width="7" height="7" rx="1.2" />
@@ -109,6 +115,7 @@ const IconLogout = () => (
 const NAV_ITEMS = [
   { to: "/", label: "오늘의 브리핑", end: true, Icon: IconHome },
   { to: "/assistant", label: "AI 비서", Icon: IconSpark },
+  { to: "/writing-assistant", label: "작성 도우미", Icon: IconPencil },
   { to: "/timetable", label: "시간표", Icon: IconGrid },
   { to: "/progress", label: "수업 진도", Icon: IconChart },
   { to: "/events", label: "일정", Icon: IconCalendar },

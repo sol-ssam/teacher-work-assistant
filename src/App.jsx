@@ -5,6 +5,7 @@ import Sidebar from "./components/Sidebar";
 import Login from "./pages/Login";
 import Home from "./pages/Home";
 import AssistantPage from "./pages/AssistantPage";
+import WritingAssistantPage from "./pages/WritingAssistantPage";
 import TimetablePage from "./pages/TimetablePage";
 import MonthlyProgressPage from "./pages/MonthlyProgressPage";
 import EventsPage from "./pages/EventsPage";
@@ -41,6 +42,7 @@ function AuthenticatedApp() {
         <Routes>
           <Route path="/" element={<Home />} />
           <Route path="/assistant" element={<AssistantPage />} />
+          <Route path="/writing-assistant" element={<WritingAssistantPage />} />
           <Route path="/timetable" element={<TimetablePage />} />
           <Route path="/progress" element={<MonthlyProgressPage />} />
           <Route path="/monthly-progress" element={<Navigate to="/progress" replace />} />

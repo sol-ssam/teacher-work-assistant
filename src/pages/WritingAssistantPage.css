@@ -1,0 +1,77 @@
+/* 전달할 내용 textarea(.field--grow) 아래에 버튼과의 간격을 충분히 둔다 - crud-shared.css의
+   기본 .field--grow는 form 안에서 다른 입력칸들과 나란히 배치되는 걸 가정해 margin이 없다. */
+.writing-assistant-page .wa-field--content {
+  margin-bottom: 4px;
+}
+
+.writing-assistant-page .wa-result {
+  margin-top: 28px;
+}
+
+.writing-assistant-page .wa-result__text {
+  white-space: pre-line;
+  word-break: keep-all;
+  overflow-wrap: break-word;
+  background: var(--bg-card-soft);
+  border: 1px solid var(--paper-line);
+  border-radius: 12px;
+  padding: 16px;
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--ink);
+  margin: 0 0 14px;
+}
+
+.writing-assistant-page .wa-result__actions {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+
+.writing-assistant-page .wa-refine {
+  padding-top: 18px;
+  border-top: 1px solid var(--paper-line);
+}
+
+.writing-assistant-page .wa-refine__label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink-soft);
+  margin: 0 0 10px;
+}
+
+.writing-assistant-page .wa-refine__quick {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.writing-assistant-page .wa-refine__custom {
+  display: flex;
+  gap: 8px;
+}
+
+.writing-assistant-page .wa-refine__custom input {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid var(--paper-line);
+  background: var(--bg-card);
+  border-radius: 8px;
+  padding: 7px 9px;
+  font-size: 13.5px;
+  color: var(--ink);
+}
+
+.writing-assistant-page .wa-refine__custom input:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+@media (max-width: 640px) {
+  .writing-assistant-page .wa-refine__custom {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}

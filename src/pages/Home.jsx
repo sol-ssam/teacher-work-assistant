@@ -272,7 +272,7 @@ export default function Home() {
               {
                 key: "tt-changed",
                 category: "시간표",
-                text: "오늘 시간표 변동이 있습니다 — 아래 오늘 수업을 확인하세요.",
+                text: "오늘 시간표에 변동이 있습니다. 변경된 수업을 확인하세요.",
                 meta: "오늘",
               },
             ]
