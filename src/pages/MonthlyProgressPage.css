@@ -594,6 +594,98 @@
   color: var(--text-secondary);
 }
 
+/* 저장된 메모 삭제(×) - 삭제 기능이지만 눈에 띄는 큰 빨간 버튼이 아니라 작은 보조
+   컨트롤 정도로만 보이게 한다. */
+.pp-class-note__delete {
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 15px;
+  line-height: 1;
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.pp-class-note__delete:hover:not(:disabled) {
+  background: var(--border-soft);
+  color: var(--text-primary);
+}
+
+.pp-class-note__delete:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.pp-class-note__delete:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* ===== 반 헤더의 저장된 메모 말풍선 아이콘 + 팝오버 ===== */
+.pp-note-popover-anchor {
+  position: relative;
+  display: inline-flex;
+  flex: 0 0 auto;
+}
+
+.pp-note-bubble {
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--accent-soft);
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-radius: 50%;
+  cursor: pointer;
+  padding: 0;
+}
+
+.pp-note-bubble:hover {
+  filter: brightness(0.96);
+}
+
+.pp-note-bubble:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* 말풍선 근처에 떠 있는 읽기 전용 팝오버 - 별도 라이브러리 없이 anchor 기준
+   absolute positioning만 쓴다. 오른쪽 끝을 anchor에 맞춰서(right: 0) 모바일에서
+   화면 오른쪽 밖으로 넘어가지 않고 왼쪽으로 펼쳐지게 한다. */
+.pp-note-popover {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 20;
+  width: max-content;
+  max-width: min(260px, calc(100vw - 32px));
+  max-height: 160px;
+  overflow-y: auto;
+  background: var(--bg-card);
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
+  padding: 10px 12px;
+  box-shadow: var(--shadow-soft);
+  cursor: default;
+}
+
+.pp-note-popover__text {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-primary);
+  white-space: pre-wrap;
+  word-break: keep-all;
+  overflow-wrap: break-word;
+}
+
 .progress-accordion__remaining {
   flex: 0 0 auto;
   font-size: 12.5px;

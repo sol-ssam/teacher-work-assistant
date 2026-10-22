@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "../contexts/AuthContext";
 import { createDoc, updateDocById, deleteDocById, listDocsByOwner } from "../firebase/crud";
 import { todayDateString, endOfMonthDateString, formatDateDisplay } from "../utils/date";
@@ -110,6 +110,23 @@ function ProgressIcon({ className }) {
     >
       <circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" strokeWidth="1.3" />
       <path d="M8 1.5a6.5 6.5 0 0 0 0 13z" fill="currentColor" />
+    </svg>
+  );
+}
+
+// 저장된 수업 메모가 있는 반의 아코디언 헤더에 보여주는 작은 outline 말풍선 아이콘.
+// 새 아이콘 라이브러리 없이 ProgressIcon과 같은 방식(currentColor, 인라인 SVG)으로
+// 직접 그린다.
+function NoteBubbleIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" aria-hidden="true" focusable="false">
+      <path
+        d="M4 5.5A1.5 1.5 0 0 1 5.5 4h13A1.5 1.5 0 0 1 20 5.5v9A1.5 1.5 0 0 1 18.5 16H10l-4 4v-4H5.5A1.5 1.5 0 0 1 4 14.5z"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
     </svg>
   );
 }
@@ -415,9 +432,67 @@ export default function MonthlyProgressPage() {
   const [editingNoteFor, setEditingNoteFor] = useState(null);
   const [noteDraft, setNoteDraft] = useState("");
   const [savingNote, setSavingNote] = useState(false);
+  const [deletingNoteFor, setDeletingNoteFor] = useState(null);
+  // { className, message } 형태로 저장해서, 다른 반 패널에는 이 오류가 번지지 않게 한다.
+  const [noteDeleteError, setNoteDeleteError] = useState(null);
+  // 말풍선 팝오버는 한 번에 하나만 열린다 - className 하나만 저장한다.
+  const [notePopoverFor, setNotePopoverFor] = useState(null);
+  const notePopoverRef = useRef(null);
 
   function noteForClass(className) {
     return notes.find((n) => isSameClass(n.className, className)) || null;
+  }
+
+  // ×/말풍선은 "Firestore에 실제 저장된 메모"만 기준으로 한다 - textarea draft와
+  // 혼동하지 않는다. 기존 updateDocById가 빈 문자열로도 저장할 수 있어 문서가 남아
+  // 있어도 note가 빈 문자열일 수 있으므로 trim 후 내용이 있는지까지 함께 확인한다.
+  function hasSavedNote(className) {
+    return !!noteForClass(className)?.note?.trim();
+  }
+
+  function toggleNotePopover(className) {
+    setNotePopoverFor((prev) => (prev === className ? null : className));
+  }
+
+  // 팝오버 바깥 클릭 또는 Esc로 닫는다. 열린 팝오버가 있을 때만 리스너를 붙인다.
+  useEffect(() => {
+    if (!notePopoverFor) return undefined;
+    function handlePointerDown(e) {
+      if (notePopoverRef.current && !notePopoverRef.current.contains(e.target)) {
+        setNotePopoverFor(null);
+      }
+    }
+    function handleKeyDown(e) {
+      if (e.key === "Escape") setNotePopoverFor(null);
+    }
+    document.addEventListener("mousedown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [notePopoverFor]);
+
+  // 저장된 메모 삭제 - progress_current와 같은 "반당 문서 하나" 구조라, deleteCurrentProgress와
+  // 동일하게 문서 자체를 지운다(빈 문자열 저장이 아니다). Firestore 삭제가 끝난 뒤에만
+  // draft/팝오버/말풍선을 함께 정리한다 - 실패하면 화면에 남아 있던 메모를 그대로 둔다.
+  async function deleteNote(className) {
+    if (!user) return;
+    const existing = noteForClass(className);
+    if (!existing) return;
+    setDeletingNoteFor(className);
+    setNoteDeleteError(null);
+    try {
+      await deleteDocById("progress_class_notes", existing.id);
+      await reloadNotes();
+      if (editingNoteFor === className) cancelEditNote();
+      if (notePopoverFor === className) setNotePopoverFor(null);
+    } catch (e) {
+      console.error("[MonthlyProgress] progress_class_notes 삭제 실패:", e);
+      setNoteDeleteError({ className, message: "메모 삭제에 실패했습니다. 잠시 후 다시 시도해 주세요." });
+    } finally {
+      setDeletingNoteFor(null);
+    }
   }
 
   function startEditNote(className) {
@@ -1716,15 +1791,28 @@ export default function MonthlyProgressPage() {
                     : stats.currentItem
                     ? `${stats.currentItem.title} 완료`
                     : "시작 전";
+                  const classHasSavedNote = hasSavedNote(className);
+                  const classShortName = formatClassShortName(className);
                   return (
                     <div className="progress-accordion__item" key={className}>
-                      <button
-                        type="button"
+                      {/* role="button"인 div - 안에 말풍선 button을 따로 넣어야 해서(button
+                          안에 button을 넣는 건 유효하지 않은 HTML) <button>에서 바꿨다.
+                          CSS는 이미 border/background/cursor를 전부 직접 지정해 두어
+                          시각적으로 달라지지 않는다. */}
+                      <div
                         className="progress-accordion__summary"
+                        role="button"
+                        tabIndex={0}
                         onClick={() => toggleProgressClassExpanded(className)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            toggleProgressClassExpanded(className);
+                          }
+                        }}
                         aria-expanded={expanded}
                       >
-                        <span className="progress-accordion__name">{formatClassShortName(className)}</span>
+                        <span className="progress-accordion__name">{classShortName}</span>
                         <span className="progress-accordion__status">
                           {statusLabel}
                           {currentFromAnotherMonth && (
@@ -1739,10 +1827,39 @@ export default function MonthlyProgressPage() {
                           )}
                         </span>
                         <span className="progress-accordion__remaining">{stats.remainingPlanItems}개 남음</span>
+                        {classHasSavedNote && (
+                          <span
+                            className="pp-note-popover-anchor"
+                            ref={notePopoverFor === className ? notePopoverRef : undefined}
+                          >
+                            <button
+                              type="button"
+                              className="pp-note-bubble"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                toggleNotePopover(className);
+                              }}
+                              aria-label={`${classShortName} 수업 메모 보기`}
+                              aria-expanded={notePopoverFor === className}
+                            >
+                              <NoteBubbleIcon />
+                            </button>
+                            {notePopoverFor === className && (
+                              <div
+                                className="pp-note-popover"
+                                role="dialog"
+                                aria-label={`${classShortName} 수업 메모`}
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                <p className="pp-note-popover__text">{noteForClass(className)?.note}</p>
+                              </div>
+                            )}
+                          </span>
+                        )}
                         <span className="progress-accordion__chevron" aria-hidden="true">
                           {expanded ? "∧" : "∨"}
                         </span>
-                      </button>
+                      </div>
 
                       {expanded && (
                         <div className="progress-accordion__panel">
@@ -1778,12 +1895,26 @@ export default function MonthlyProgressPage() {
                           <div className="pp-class-note">
                             <div className="pp-class-note__head">
                               <span className="pp-class-note__label">수업 메모</span>
+                              {classHasSavedNote && (
+                                <button
+                                  type="button"
+                                  className="pp-class-note__delete"
+                                  onClick={() => deleteNote(className)}
+                                  disabled={deletingNoteFor === className}
+                                  aria-label={`${classShortName} 수업 메모 삭제`}
+                                >
+                                  ×
+                                </button>
+                              )}
                               {editingNoteFor !== className && (
                                 <button type="button" className="btn-text" onClick={() => startEditNote(className)}>
                                   {noteForClass(className) ? "수정" : "작성"}
                                 </button>
                               )}
                             </div>
+                            {noteDeleteError?.className === className && (
+                              <p className="status status--error">{noteDeleteError.message}</p>
+                            )}
                             {editingNoteFor === className ? (
                               <div className="form" style={{ marginTop: 6 }}>
                                 <div className="field field--grow">
