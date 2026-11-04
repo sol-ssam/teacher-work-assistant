@@ -12,6 +12,7 @@ import { getUpcomingNeedsReviewSchedules } from "../utils/schoolScheduleUtils";
 import {
   analyzeClassProgress,
   compareClassesInGrade,
+  computeCarryoverPlanItems,
   computeLessonBalance,
   gradeOfClassName,
   parseClassCode,
@@ -246,9 +247,35 @@ export default function MonthlyProgressPage() {
   );
 
   const planItemIds = useMemo(() => new Set(planItems.map((p) => p.id)), [planItems]);
+
+  // 이전 달(들)에서 선택한 월까지 끊기지 않고 이어지는 미완료 진도 - 계획 데이터를
+  // 복제하지 않고 원본 planItem을 그대로 가져와 "반별 진도 체크표"에 함께 보여준다.
+  // "{year}년 {month}월 진도계획" 편집 목록(draftItems/planItems/savePlanItems)에는
+  // 절대 섞지 않는다 - 그쪽은 이 달의 원본 계획만 다룬다.
+  const carryoverPlanItems = useMemo(
+    () => computeCarryoverPlanItems({ gradePlanItems, checks: allChecks, classNames: classesInGrade, year, month }),
+    [gradePlanItems, allChecks, classesInGrade, year, month]
+  );
+
+  // "반별 진도 체크표"에 실제로 표시할 항목(이전 달 carryover + 이번 달 계획). order를
+  // 배열 위치 기준으로 다시 매겨 월 경계 raw order 충돌을 막는다(원본 문서의 order는
+  // 수정하지 않는다) - analyzeClassProgress는 넘겨받은 배열을 order로 재정렬하므로, 이
+  // 파생 order가 없으면 다른 달인데 값이 같은 order가 섞여 순서가 흐트러진다.
+  const matrixPlanItems = useMemo(
+    () => [...carryoverPlanItems, ...planItems].map((p, index) => ({ ...p, order: index })),
+    [carryoverPlanItems, planItems]
+  );
+
+  // checksForPlan이 보는 planItemId 범위를 carryover 항목까지 넓힌다 - 새 체크 데이터를
+  // 만드는 게 아니라, isChecked/toggleCheck가 carryover 항목의 기존 progress_checks도
+  // 찾을 수 있도록 "화면에 보이는 항목 범위"만 넓히는 것이다. savePlanItems의 계획 중간
+  // 삽입 자동완료(existingIndexById)는 draftItems(이번 달 전용)에서만 id를 가져오므로
+  // carryover id가 섞여도 영향받지 않는다. planItemIds(이번 달 전용)는 "이 항목이 다른
+  // 달 계획인지" 표시에 그대로 쓰이므로 건드리지 않는다.
+  const visiblePlanItemIds = useMemo(() => new Set(matrixPlanItems.map((p) => p.id)), [matrixPlanItems]);
   const checksForPlan = useMemo(
-    () => allChecks.filter((c) => planItemIds.has(c.planItemId)),
-    [allChecks, planItemIds]
+    () => allChecks.filter((c) => visiblePlanItemIds.has(c.planItemId)),
+    [allChecks, visiblePlanItemIds]
   );
 
   // ===== 월별 진도계획 빠른 입력 =====
@@ -629,10 +656,16 @@ export default function MonthlyProgressPage() {
     );
     const now = new Date().toISOString();
     const willBeCompleted = !existing?.completed;
-    const targetItem = planItems.find((p) => p.id === planItemId);
+    // planItems(이번 달 전용)가 아니라 matrixPlanItems(carryover + 이번 달)에서 찾는다 -
+    // planItemId가 carryover 항목(이전 달 원본 planItem)이면 planItems에는 항상 없어서
+    // targetItem이 undefined가 되고, 아래 history 생성 블록 전체가 건너뛰어진다.
+    const targetItem = matrixPlanItems.find((p) => p.id === planItemId);
 
     if (willBeCompleted) {
-      const throughIds = computeCompletedIdsThrough(planItems, planItemId) || [planItemId];
+      // computeCompletedIdsThrough도 matrixPlanItems 기준으로 "그 항목까지"를 구한다 -
+      // 뒤 항목을 체크하면 월 경계를 넘어 이전 달 carryover의 미완료 항목까지 함께
+      // 완료 처리된다(자동 완료된 항목에는 history를 만들지 않는다는 원칙은 그대로).
+      const throughIds = computeCompletedIdsThrough(matrixPlanItems, planItemId) || [planItemId];
       const idsToComplete = throughIds.filter((id) => !isChecked(id, className));
 
       for (const id of idsToComplete) {
@@ -675,7 +708,9 @@ export default function MonthlyProgressPage() {
       if (currentRemoved) reloadCurrents();
 
       if (targetItem) {
-        const completedIdsAfter = planItems
+        // 여기도 matrixPlanItems 기준 - target이 carryover 항목이면 planItems에는 없어서
+        // completedIdsAfter에서 빠지는 문제를 막는다.
+        const completedIdsAfter = matrixPlanItems
           .map((p) => p.id)
           .filter((id) => idsToComplete.includes(id) || isChecked(id, className));
         const latestHistory = (historyByClass[className] || [])[0] || null;
@@ -1035,6 +1070,24 @@ export default function MonthlyProgressPage() {
       ),
     [progressByClass]
   );
+
+  // "반별 진도 현황"에서 "지금 이어서 해야 할 진도"(현재/다음 항목, 아코디언 헤더의
+  // "N차시 남음" 배지)를 표시하기 위한 전용 통계 - carryoverPlanItems까지 포함한 순서
+  // (matrixPlanItems)로 계산한다. 위 progressByClass.stats(이번 달 planItems만)는
+  // "{month}월 계획 N개 항목 남음"/예상 필요 차시 표시에 그대로 쓰이므로 절대 건드리지
+  // 않는다 - 이 통계는 currentItem/nextItem/estimatedRemainingLessons(carryover 포함
+  // 버전)만 꺼내 쓴다.
+  const displayStatsByClass = useMemo(() => {
+    const map = new Map();
+    for (const className of classesInGrade) {
+      const checkedIds = checksForPlan
+        .filter((c) => isSameClass(c.className, className) && c.completed)
+        .map((c) => c.planItemId);
+      const current = currents.find((c) => isSameClass(c.className, className)) || null;
+      map.set(className, analyzeClassProgress(matrixPlanItems, checkedIds, current));
+    }
+    return map;
+  }, [classesInGrade, checksForPlan, matrixPlanItems, currents]);
 
   // ===== 실제 남은 수업 횟수 - 담당 학년의 실제 담당 반 전체를 한 번에 비교 =====
   const [dateFrom, setDateFrom] = useState(today);
@@ -1804,25 +1857,39 @@ export default function MonthlyProgressPage() {
             {classesInGrade.length === 0 && (
               <p className="list--empty">이 학년의 학급이 시간표에 없습니다. 먼저 시간표를 등록해 주세요.</p>
             )}
-            {planItems.length === 0 && classesInGrade.length > 0 && (
+            {matrixPlanItems.length === 0 && classesInGrade.length > 0 && (
               <p className="list--empty">먼저 위에서 진도계획을 저장해 주세요.</p>
             )}
-            {classesInGrade.length > 0 && planItems.length > 0 && (
+            {classesInGrade.length > 0 && matrixPlanItems.length > 0 && (
               <div className="progress-matrix__wrap">
                 <table className="progress-matrix">
                   <thead>
                     <tr>
                       <th className="progress-matrix__corner">학급</th>
-                      {planItems.map((p) => (
-                        <th key={p.id}>{p.title}</th>
-                      ))}
+                      {matrixPlanItems.map((p) => {
+                        // carryover 항목(이전 달 원본 planItem)만 "← N월 계획에서 이어짐"
+                        // 보조 표시를 붙인다 - 반별 진도 현황 accordion의 기존 "이어짐" 문구
+                        // 스타일을 그대로 재사용한다.
+                        const isCarryover = carryoverPlanItems.some((c) => c.id === p.id);
+                        return (
+                          <th key={p.id}>
+                            {p.title}
+                            {isCarryover && (
+                              <span className="progress-matrix__carryover-tag">
+                                ← {String(p.year) !== String(year) ? `${p.year}년 ` : ""}
+                                {p.month}월 계획에서 이어짐
+                              </span>
+                            )}
+                          </th>
+                        );
+                      })}
                     </tr>
                   </thead>
                   <tbody>
                     {classesInGrade.map((className) => (
                       <tr key={className}>
                         <th className="progress-matrix__rowhead">{formatClassShortName(className)}</th>
-                        {planItems.map((p) => {
+                        {matrixPlanItems.map((p) => {
                           const detail = inProgressDetail(p.id, className);
                           const done = isChecked(p.id, className);
                           return (
@@ -1846,7 +1913,7 @@ export default function MonthlyProgressPage() {
                 </table>
               </div>
             )}
-            {classesInGrade.length > 0 && planItems.length > 0 && (
+            {classesInGrade.length > 0 && matrixPlanItems.length > 0 && (
               <div className="pp-legend">
                 <span className="pp-legend__item">
                   <span className="progress-matrix__check progress-matrix__check--done pp-legend__swatch">✓</span>
@@ -1865,11 +1932,22 @@ export default function MonthlyProgressPage() {
               </div>
             )}
           </section>
-          {classesInGrade.length > 0 && planItems.length > 0 && (
+          {classesInGrade.length > 0 && matrixPlanItems.length > 0 && (
             <section className="page__section">
               <h2 className="section__title">반별 진도 현황</h2>
               <div className="progress-accordion">
                 {progressByClass.map(({ className, stats }) => {
+                  // displayStats(carryover 포함)를 "현재/다음 항목"과 아코디언 헤더의
+                  // "N차시 남음" 배지에 쓴다 - stats(이번 달 planItems만)는 "{month}월 계획
+                  // N개 항목 남음"/예상 필요 차시 표시에 그대로 남겨둔다(중복 합산 방지).
+                  const displayStats = displayStatsByClass.get(className);
+                  // 아코디언 헤더 배지 - "남은 계획 항목 개수"가 아니라 "실제로 더 진행해야
+                  // 할 차시 수"를 보여준다. 남은 항목이 하나도 없으면(전부 완료)
+                  // estimatedRemainingLessons가 null이므로(추정할 대상 자체가 없다는 뜻) 그
+                  // 경우만 0으로 보정한다. 그 외(일부 항목에 차시 정보가 없어 추정 불가)는
+                  // 기존처럼 항목 개수로 안전하게 대체 표시한다.
+                  const remainingLessonsCount =
+                    displayStats.remainingPlanItems === 0 ? 0 : displayStats.estimatedRemainingLessons;
                   const gapMsg = comparison.messages.find((m) => isSameClass(m.className, className));
                   const current = currents.find((c) => isSameClass(c.className, className));
                   // 진행 중 항목 자체의 계획 차시 - progress_current에는 절대 복제 저장하지
@@ -1900,8 +1978,8 @@ export default function MonthlyProgressPage() {
                   const expanded = expandedProgressClasses.has(className);
                   const statusLabel = current
                     ? `${current.planItemTitle} 진행 중${currentLessonsSuffix}`
-                    : stats.currentItem
-                    ? `${stats.currentItem.title} 완료`
+                    : displayStats.currentItem
+                    ? `${displayStats.currentItem.title} 완료`
                     : "시작 전";
                   const classHasSavedNote = hasSavedNote(className);
                   const classShortName = formatClassShortName(className);
@@ -1934,11 +2012,15 @@ export default function MonthlyProgressPage() {
                             </span>
                           )}
                           {current?.detail && <span className="progress-accordion__detail"> · {current.detail}</span>}
-                          {!current && stats.nextItem && (
-                            <span className="progress-accordion__next"> · 다음 {stats.nextItem.title}</span>
+                          {!current && displayStats.nextItem && (
+                            <span className="progress-accordion__next"> · 다음 {displayStats.nextItem.title}</span>
                           )}
                         </span>
-                        <span className="progress-accordion__remaining">{stats.remainingPlanItems}개 남음</span>
+                        <span className="progress-accordion__remaining">
+                          {remainingLessonsCount != null
+                            ? `${remainingLessonsCount}차시 남음`
+                            : `${displayStats.remainingPlanItems}개 남음`}
+                        </span>
                         {classHasSavedNote && (
                           <span
                             className="pp-note-popover-anchor"
@@ -1977,7 +2059,7 @@ export default function MonthlyProgressPage() {
                         <div className="progress-accordion__panel">
                           <p className="list__title">{formatClassName(className)}</p>
                           <p className="list__meta">
-                            현재: {stats.currentItem?.title ?? "시작 전"} · 다음: {stats.nextItem?.title ?? "없음"} ·{" "}
+                            현재: {displayStats.currentItem?.title ?? "시작 전"} · 다음: {displayStats.nextItem?.title ?? "없음"} ·{" "}
                             {month}월 계획 {stats.remainingPlanItems}개 항목 남음
                             {stats.estimatedRemainingLessons != null &&
                               ` · 예상 필요 차시 ${stats.estimatedRemainingLessons}차시`}
@@ -2344,9 +2426,28 @@ export default function MonthlyProgressPage() {
 
             <div className="remaining-grid">
               {remainingResults.map(({ className, result }) => {
-                const estimated =
+                const monthEstimated =
                   progressByClass.find((c) => isSameClass(c.className, className))?.stats
                     .estimatedRemainingLessons ?? null;
+                // current가 이번 달 계획에는 없는(이전 달에서 이어진) 항목을 가리키면, 그
+                // 항목의 "이미 진행한 차시"를 뺀 남은 차시를 이번 달 계획상 필요 차시에
+                // 더한다 - analyzeClassProgress는 넘겨받은 planItems(이번 달) 범위 밖의
+                // 항목은 알 수 없으므로 여기서만 따로 더해준다. 이번 달 항목이 current면
+                // analyzeClassProgress가 이미 처리했으므로 0을 더한다(중복 합산 방지).
+                const current = currents.find((c) => isSameClass(c.className, className));
+                let carriedOverRemaining = 0;
+                if (current && !planItems.some((p) => p.id === current.planItemId)) {
+                  const carriedItem = gradePlanItems.find((p) => p.id === current.planItemId);
+                  if (carriedItem && isValidEstimatedLessons(carriedItem.estimatedLessons)) {
+                    const completed =
+                      typeof current.lessonsCompletedInItem === "number" ? current.lessonsCompletedInItem : 0;
+                    carriedOverRemaining = Math.max(0, carriedItem.estimatedLessons - completed);
+                  } else {
+                    carriedOverRemaining = null; // 이월된 항목의 차시 수를 알 수 없음 - 단정하지 않는다.
+                  }
+                }
+                const estimated =
+                  monthEstimated == null || carriedOverRemaining == null ? null : monthEstimated + carriedOverRemaining;
                 const balance = estimated == null ? null : computeLessonBalance(result.total, estimated);
                 const basisOpen = showBasisFor === className;
 

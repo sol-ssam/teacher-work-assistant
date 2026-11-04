@@ -154,6 +154,54 @@ export function resolveClassInput(rawInput, ownedClassNames) {
   return { className: null, candidates: [] };
 }
 
+// 월 경계를 넘어 이어지는 미완료 진도(carryover)를 "화면에서 파생"한다 - 계획 데이터를
+// 복제하지 않고, 과거 달의 원본 planItem 중 "선택한 월까지 끊기지 않고 이어지는 미완료
+// 흐름"에 속하는 것만 돌려준다.
+//
+// 판정 방법: 선택한 월보다 이전 달들을, 실제로 계획이 있는 달만, 가장 가까운 달부터
+// 거슬러 올라간다. 한 반을 기준으로, 어떤 달의 planItem이 하나라도 아직
+// completed:true가 아니면 그 달 전체(그 반 입장에서 미완료인 항목들)를 carryover 후보에
+// 넣고 한 달 더 거슬러 올라간다. 반대로 그 달의 모든 항목이 이미 완료되어 있으면 그
+// 반은 거기서 멈춘다(그보다 더 과거의, 이미 지나간 흐름 뒤에 남은 단순 체크 누락은
+// 끌어오지 않는다). 이 판정을 반마다 독립적으로 하고(반마다 멈추는 지점이 다를 수
+// 있다), 그 합집합을 돌려준다 - 적어도 한 반이라도 미완료인 항목이면 화면에 표시해야
+// 하기 때문이다.
+//
+// gradePlanItems: 이 학년의 모든 달에 걸친 planItem 배열. checks: progress_checks 전체
+// (이 함수 안에서 planItemId+className으로 직접 매칭하므로 미리 월/학년으로 좁혀서 넘길
+// 필요 없다). classNames: 지금 비교할 학급 목록. year/month: 현재 선택된 월.
+//
+// 반환: 선택한 월보다 이전 달에 속하면서 적어도 한 반에서 아직 완료되지 않은
+// planItem들을, (year, month, order) 오름차순(오래된 것부터)으로 정렬해 돌려준다.
+export function computeCarryoverPlanItems({ gradePlanItems, checks, classNames, year, month }) {
+  const monthKey = (y, m) => Number(y) * 12 + Number(m);
+  const selectedKey = monthKey(year, month);
+
+  const isCompletedByClass = (planItemId, className) =>
+    checks.some((c) => c.planItemId === planItemId && isSameClass(c.className, className) && c.completed);
+
+  const pastMonthKeys = [
+    ...new Set(
+      gradePlanItems.filter((p) => monthKey(p.year, p.month) < selectedKey).map((p) => monthKey(p.year, p.month))
+    ),
+  ].sort((a, b) => b - a); // 선택한 월에 가장 가까운 과거 달부터.
+
+  const carryoverIds = new Set();
+
+  for (const className of classNames) {
+    for (const key of pastMonthKeys) {
+      const itemsThisMonth = gradePlanItems.filter((p) => monthKey(p.year, p.month) === key);
+      const incompleteThisMonth = itemsThisMonth.filter((p) => !isCompletedByClass(p.id, className));
+      if (incompleteThisMonth.length === 0) break; // 이 반은 이 달을 전부 끝냈다 - 더 과거로 가지 않는다.
+      incompleteThisMonth.forEach((p) => carryoverIds.add(p.id));
+    }
+  }
+
+  return gradePlanItems
+    .filter((p) => carryoverIds.has(p.id))
+    .sort((a, b) => monthKey(a.year, a.month) - monthKey(b.year, b.month) || a.order - b.order);
+}
+
 // currentProgress({ planItemId, lessonsCompletedInItem })는 그 반의 progress_current다(선택). 그 항목이
 // 미완료이고 계획 차시와 진행 차시가 모두 유효한 정수(1 <= 진행 <= 계획)일 때만 이미 진행한 차시를
 // 예상 필요 차시에서 뺀다. 그 외(차시 숫자 없음/잘못된 값/완료 항목/다른 항목)는 기존처럼 전체를 센다.

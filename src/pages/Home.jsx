@@ -17,7 +17,13 @@ import {
   deriveUpcomingTasks,
 } from "../utils/briefingDerive";
 import { eventTypeDisplayLabel } from "../utils/constants";
-import { formatClassName, gradeOfClassName, isSameClass, analyzeClassProgress } from "../utils/progressComparison";
+import {
+  formatClassName,
+  gradeOfClassName,
+  isSameClass,
+  analyzeClassProgress,
+  computeCarryoverPlanItems,
+} from "../utils/progressComparison";
 import { isValidEstimatedLessons, filterPlanItemsForMonth } from "../utils/progressStatusUpdate";
 import BriefingSection from "../components/BriefingSection";
 import HomeQuickAssistant from "../components/HomeQuickAssistant";
@@ -144,16 +150,12 @@ export default function Home() {
             const grade = gradeOfClassName(className);
             const planItemsForMonth = filterPlanItemsForMonth(progressPlans, grade, py, pm);
 
-            // D. 현재 월 계획 자체가 없음.
-            if (planItemsForMonth.length === 0) {
-              classChipByName.set(className, "진도 계획 없음");
-              continue;
-            }
-
             // A/B. 진행 중 항목이 있으면 월과 무관하게(이월된 항목이어도) 그대로 보여준다 -
             // progress_current에는 className당 하나만 있으므로 월로 다시 좁히지 않는다.
-            // detail 문장은 "완료했다"인지 "해야 한다"인지 schema만으로 알 수 없으므로,
-            // 코드가 임의로 재해석하지 않고 항상 "이어서 해야함" 뒤에 참고 기록으로만 붙인다.
+            // 이번 달 계획이 비어 있어도 이전 달에서 이어지는 진행 중 항목이 있을 수
+            // 있으므로, "계획 없음" 판정보다 항상 먼저 확인한다. detail 문장은 "완료했다"
+            // 인지 "해야 한다"인지 schema만으로 알 수 없으므로, 코드가 임의로 재해석하지
+            // 않고 항상 "이어서 해야함" 뒤에 참고 기록으로만 붙인다.
             const current = progressCurrents.find((c) => isSameClass(c.className, className));
             if (current) {
               // lessonsCompletedInItem의 분모(estimatedLessons)는 progress_plans(source of
@@ -170,21 +172,52 @@ export default function Home() {
               continue;
             }
 
+            // 이전 달(들)에서 오늘이 속한 달까지 끊기지 않고 이어지는 미완료 진도를
+            // MonthlyProgressPage와 똑같은 computeCarryoverPlanItems로 그대로 가져온다
+            // (원본 planItem을 복제하지 않는다) - 이번 달 계획이 비어 있어도 이 반이
+            // 실제로 이어서 해야 할 항목을 "진도 계획 없음"으로 잘못 보여주지 않기
+            // 위해서다.
+            const gradePlanItemsForClass = progressPlans.filter((p) => p.grade === grade);
+            const carryoverForClass = computeCarryoverPlanItems({
+              gradePlanItems: gradePlanItemsForClass,
+              checks: progressChecks,
+              classNames: [className],
+              year: py,
+              month: pm,
+            });
+            // order를 배열 순서(=carryover 월 → 이번 달 순으로 이미 올바르게 이어진 순서)
+            // 기준으로 다시 매긴다 - MonthlyProgressPage의 matrixPlanItems와 같은 원리다.
+            // progress_plans.order는 "그 달 안에서만" 0부터 시작하는 지역 순번이라, 여러 달
+            // 항목을 합치면 월이 다른데 order 값이 같은 항목이 생길 수 있다. 이 order는
+            // Home에서 진도 판정을 위해 메모리에서만 쓰는 파생 객체의 값이고, Firestore의
+            // 원본 progress_plans.order 문서는 전혀 수정하거나 다시 저장하지 않는다.
+            const orderedPlanItems = [
+              ...carryoverForClass,
+              ...[...planItemsForMonth].sort((a, b) => a.order - b.order),
+            ].map((p, index) => ({ ...p, order: index }));
+
+            // D. 이전 달 carryover도, 이번 달 계획도 전혀 없음.
+            if (orderedPlanItems.length === 0) {
+              classChipByName.set(className, "진도 계획 없음");
+              continue;
+            }
+
             const checkedIds = progressChecks
               .filter(
                 (c) =>
-                  isSameClass(c.className, className) && c.completed && planItemsForMonth.some((p) => p.id === c.planItemId)
+                  isSameClass(c.className, className) && c.completed && orderedPlanItems.some((p) => p.id === c.planItemId)
               )
               .map((c) => c.planItemId);
-            const stats = analyzeClassProgress(planItemsForMonth, checkedIds);
+            const stats = analyzeClassProgress(orderedPlanItems, checkedIds);
 
-            // E. 현재 월 계획을 전부 완료(진행 중 항목 없음).
+            // E. carryover까지 포함해 전부 완료(진행 중 항목 없음).
             if (!stats.nextItem) {
               classChipByName.set(className, "이번 달 계획 완료");
               continue;
             }
 
-            // C. 진행 중 항목 없음 + 이번 달 다음 항목이 있음(아직 시작 전인 반 포함).
+            // C. 진행 중 항목 없음 + 다음 항목이 있음(이전 달 carryover 포함, 아직 시작
+            // 전인 반 포함).
             classChipByName.set(className, `${stats.nextItem.title} 해야함`);
           }
         }

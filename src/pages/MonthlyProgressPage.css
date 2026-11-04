@@ -445,6 +445,18 @@
   font-weight: 600;
 }
 
+/* 이전 달에서 이어지는 carryover 항목 열에만 붙는 작은 보조 표시 - 반별 진도 현황
+   accordion의 기존 "← N월 계획에서 이어짐"(.progress-accordion__carried)과 같은 accent
+   색을 재사용해 같은 의미의 표시임을 알아보기 쉽게 한다. */
+.progress-matrix__carryover-tag {
+  display: block;
+  margin-top: 2px;
+  font-size: 10.5px;
+  font-weight: 500;
+  color: var(--accent);
+  white-space: normal;
+}
+
 .progress-page .progress-matrix__rowhead {
   background: var(--bg-card-soft);
   text-align: left;
@@ -1218,6 +1230,10 @@
 
   .progress-page .progress-matrix__check--progress {
     font-size: 11px;
+  }
+
+  .progress-matrix__carryover-tag {
+    font-size: 9.5px;
   }
 
   .progress-page .pp-legend__swatch {
