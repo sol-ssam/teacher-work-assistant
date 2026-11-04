@@ -318,6 +318,18 @@ export default function MonthlyProgressPage() {
         await deleteDocById("progress_plans", p.id);
       }
 
+      // 이번 save의 최종 순서에서 "기존에 이미 있던" 항목들의 위치 - 중간 삽입된 신규
+      // 항목보다 뒤에 있는 기존 항목을 찾을 때 쓴다. row.id가 있는 행만 기존 항목이고
+      // (reorder/제목 수정은 같은 id를 유지하므로 신규로 보지 않는다), 이번에 지워질
+      // 항목(removed)은 draftItems 자체에 없으므로 여기 포함되지 않는다.
+      const existingIndexById = new Map();
+      draftItems.forEach((row, i) => {
+        if (row.id) existingIndexById.set(row.id, i);
+      });
+      // 이번 save에서 새로 만들어진 항목만 모아둔다 - 자동 완료 판단 대상은 오직 이
+      // 목록뿐이다(기존 항목의 제목 수정/순서 변경/삭제는 절대 포함되지 않는다).
+      const newlyCreated = [];
+
       for (let i = 0; i < draftItems.length; i++) {
         const row = draftItems[i];
         if (!row.title.trim()) continue;
@@ -335,9 +347,38 @@ export default function MonthlyProgressPage() {
           await updateDocById("progress_plans", row.id, payload);
         } else {
           // eslint-disable-next-line no-await-in-loop
-          await createDoc("progress_plans", user.uid, { ...payload, createdAt: now });
+          const newId = await createDoc("progress_plans", user.uid, { ...payload, createdAt: now });
+          newlyCreated.push({ id: newId, index: i });
         }
       }
+
+      // 새로 삽입된 항목보다 뒤에 있던 "기존" 계획을 이미 완료한 반은, 이미 그 지점까지
+      // 진도가 나간 것이므로 새 항목도 함께 완료 처리한다(모순 방지). progress_checks만
+      // 생성하고, progress_history/progress_current는 전혀 건드리지 않는다 - 이 자동
+      // 완료는 "오늘 그 수업을 했다"는 기록이 아니다.
+      let autoCompletedAny = false;
+      for (const { id: newId, index: newIndex } of newlyCreated) {
+        const laterExistingIds = [...existingIndexById.entries()]
+          .filter(([, idx]) => idx > newIndex)
+          .map(([id]) => id);
+        if (laterExistingIds.length === 0) continue;
+        for (const className of classesInGrade) {
+          const alreadyPastThisPoint = laterExistingIds.some((pid) => isChecked(pid, className));
+          if (!alreadyPastThisPoint) continue;
+          // eslint-disable-next-line no-await-in-loop
+          await createDoc("progress_checks", user.uid, {
+            planItemId: newId,
+            className,
+            completed: true,
+            completedAt: now,
+            createdAt: now,
+            updatedAt: now,
+          });
+          autoCompletedAny = true;
+        }
+      }
+      if (autoCompletedAny) reloadChecks();
+
       reloadPlanItems();
       setIsEditingPlan(false);
     } finally {
@@ -550,6 +591,37 @@ export default function MonthlyProgressPage() {
     }
   }
 
+  // 체크 해제 시, 그 체크를 "직접 눌러서" 만들어진 manual_check 기록만 지운다. 같은
+  // 반/항목이라도 source가 "manual"(이전 버전부터 있던 기록)이나 "ai"면 실제 수업
+  // 기록일 수 있으므로 절대 건드리지 않는다. historyByClass 캐시는 "최근 기록" 패널을
+  // 연 반에만 채워져 있어 믿을 수 없으므로, 여기서는 Firestore를 직접 다시 조회해서
+  // 정확한 대상만 찾는다.
+  async function deleteManualCheckHistory(className, planItemId) {
+    if (!user) return;
+    const all = await listDocsByOwner("progress_history", user.uid);
+    const targets = all.filter(
+      (h) => h.source === "manual_check" && h.planItemId === planItemId && isSameClass(h.className, className)
+    );
+    for (const t of targets) {
+      // eslint-disable-next-line no-await-in-loop
+      await deleteDocById("progress_history", t.id);
+    }
+    if (targets.length > 0) {
+      setHistoryByClass((prev) => {
+        if (!(className in prev)) return prev;
+        const next = { ...prev };
+        delete next[className];
+        return next;
+      });
+    }
+  }
+
+  // "뒤 항목을 체크 = 그 항목까지 완료"다. 직접 체크 시 target과 그 앞의 미완료 항목을
+  // 함께 완료 처리하되, 이미 완료돼 있던 항목(앞/뒤 모두)은 그대로 둔다. "최근 기록"은
+  // 사용자가 직접 누른 target에만 남기고(source: "manual_check"), 함께 자동 완료된 앞
+  // 항목에는 만들지 않는다 - 5단계(계획 중간 삽입 자동 완료)와 같은 원칙이다. 체크
+  // 해제는 target만 미완료로 되돌리고, 그 체크 때 만들어진 manual_check만 지운다 -
+  // 자동 완료됐던 앞 항목이나 progress_current는 복원하지 않는다.
   async function toggleCheck(planItemId, className) {
     if (!user) return;
     const existing = checksForPlan.find(
@@ -557,68 +629,88 @@ export default function MonthlyProgressPage() {
     );
     const now = new Date().toISOString();
     const willBeCompleted = !existing?.completed;
-    if (existing) {
-      await updateDocById("progress_checks", existing.id, {
-        completed: willBeCompleted,
-        completedAt: willBeCompleted ? now : null,
-        updatedAt: now,
-      });
-    } else {
-      await createDoc("progress_checks", user.uid, {
-        planItemId,
-        className,
-        completed: true,
-        completedAt: now,
-        createdAt: now,
-        updatedAt: now,
-      });
-    }
-
-    // 방금 완료로 체크한 항목이 마침 "진행 중"(progress_current) 상태였다면, 이제 끝났으니
-    // 진행 중 표시를 지운다 - 완료된 항목이 진행 중으로 남아 모순되지 않게 한다.
-    if (willBeCompleted) {
-      const current = currents.find((c) => isSameClass(c.className, className) && c.planItemId === planItemId);
-      if (current) {
-        await deleteDocById("progress_current", current.id);
-        reloadCurrents();
-      }
-    }
-
-    // 표에서 직접 체크 ON/OFF했을 때도 "진행 중 설정"/AI 경로와 마찬가지로 history에
-    // 남긴다. 체크하기 전 상태가 아니라 이번 토글이 반영된 최종 상태 snapshot을 적는다 -
-    // 아직 reloadChecks()가 끝나기 전이므로, 방금 토글한 항목만 willBeCompleted로
-    // 대체하고 나머지는 지금 화면에 보이는 checksForPlan 그대로 쓴다. progress_checks
-    // 저장 방식/체크 동작 자체는 전혀 바꾸지 않는다 - history만 추가로 기록한다.
     const targetItem = planItems.find((p) => p.id === planItemId);
-    if (targetItem) {
-      const completedIdsAfter = planItems
-        .filter((p) => (p.id === planItemId ? willBeCompleted : isChecked(p.id, className)))
-        .map((p) => p.id);
-      const latestHistory = (historyByClass[className] || [])[0] || null;
-      const newHistory = {
-        planItemId: targetItem.id,
-        detail: null,
-        completedPlanItemIds: completedIdsAfter,
-        lessonsCompletedInItem: null,
-      };
-      if (!historyEntriesEqual(latestHistory, newHistory)) {
-        await createDoc("progress_history", user.uid, {
-          className,
-          grade,
-          date: todayDateString(),
+
+    if (willBeCompleted) {
+      const throughIds = computeCompletedIdsThrough(planItems, planItemId) || [planItemId];
+      const idsToComplete = throughIds.filter((id) => !isChecked(id, className));
+
+      for (const id of idsToComplete) {
+        const existingCheck =
+          id === planItemId
+            ? existing
+            : checksForPlan.find((c) => c.planItemId === id && isSameClass(c.className, className));
+        if (existingCheck) {
+          // eslint-disable-next-line no-await-in-loop
+          await updateDocById("progress_checks", existingCheck.id, {
+            completed: true,
+            completedAt: now,
+            updatedAt: now,
+          });
+        } else {
+          // eslint-disable-next-line no-await-in-loop
+          await createDoc("progress_checks", user.uid, {
+            planItemId: id,
+            className,
+            completed: true,
+            completedAt: now,
+            createdAt: now,
+            updatedAt: now,
+          });
+        }
+      }
+
+      // target 자신이거나, 함께 자동 완료된 앞 항목이 "진행 중"(progress_current)을
+      // 가리키고 있었다면 더 이상 진행 중일 수 없으므로 정리한다. 그 항목의 기존 실제
+      // history(progress_history)는 전혀 건드리지 않는다.
+      let currentRemoved = false;
+      for (const id of idsToComplete) {
+        const current = currents.find((c) => isSameClass(c.className, className) && c.planItemId === id);
+        if (current) {
+          // eslint-disable-next-line no-await-in-loop
+          await deleteDocById("progress_current", current.id);
+          currentRemoved = true;
+        }
+      }
+      if (currentRemoved) reloadCurrents();
+
+      if (targetItem) {
+        const completedIdsAfter = planItems
+          .map((p) => p.id)
+          .filter((id) => idsToComplete.includes(id) || isChecked(id, className));
+        const latestHistory = (historyByClass[className] || [])[0] || null;
+        const newHistory = {
           planItemId: targetItem.id,
-          planItemTitle: targetItem.title,
           detail: null,
           completedPlanItemIds: completedIdsAfter,
-          source: "manual",
-          createdAt: now,
-        });
-        setHistoryByClass((prev) => {
-          const next = { ...prev };
-          delete next[className];
-          return next;
-        });
+          lessonsCompletedInItem: null,
+        };
+        if (!historyEntriesEqual(latestHistory, newHistory)) {
+          await createDoc("progress_history", user.uid, {
+            className,
+            grade,
+            date: todayDateString(),
+            planItemId: targetItem.id,
+            planItemTitle: targetItem.title,
+            detail: null,
+            completedPlanItemIds: completedIdsAfter,
+            source: "manual_check",
+            createdAt: now,
+          });
+          setHistoryByClass((prev) => {
+            const next = { ...prev };
+            delete next[className];
+            return next;
+          });
+        }
       }
+    } else {
+      await updateDocById("progress_checks", existing.id, {
+        completed: false,
+        completedAt: null,
+        updatedAt: now,
+      });
+      await deleteManualCheckHistory(className, planItemId);
     }
 
     reloadChecks();
