@@ -1,5 +1,10 @@
 import { enumerateDateRange, weekdayKoreanOf, isDateInRange } from "./date";
-import { getEffectiveDayOfWeek, isClassExcludedForDate, isPeriodRegularForDate } from "./schoolScheduleUtils";
+import {
+  getEffectiveDayOfWeek,
+  isClassExcludedForDate,
+  isPeriodRegularForDate,
+  findExcludingClassActivity,
+} from "./schoolScheduleUtils";
 import { isSameClass } from "./progressComparison";
 
 // 날짜 범위 안에서 특정 학급의 실제 남은 수업 횟수를 계산한다. Gemini를 전혀 사용하지
@@ -12,9 +17,12 @@ import { isSameClass } from "./progressComparison";
 // 10. lesson_adjustments 반영
 // 11~12. 최종 횟수와 근거(basis) 반환
 //
-// status가 "confirmed"가 아닌 school_day_schedules(예: needs_review)는 계산에 반영하지
-// 않고, 대신 unresolvedSchedules로 따로 돌려준다 - 확정되지 않은 영향을 임의로 차감하지
-// 않기 위해서다.
+// status가 "confirmed"가 아닌 school_day_schedules(예: needs_review)의 날짜 단위
+// 해석(noRegularClasses/scheduleDayOverride/regularPeriods/affectedGrades/
+// affectedPeriods)은 계산에 반영하지 않고, 대신 unresolvedSchedules로 따로 돌려준다 -
+// 확정되지 않은 영향을 임의로 차감하지 않기 위해서다. 다만 그 문서 안의
+// classActivities는 개별 활동 자체의 status로 독립 판정되므로(schoolScheduleUtils.js
+// 참고), 날짜 전체가 needs_review여도 confirmed인 활동은 그대로 반영된다.
 export function calculateRemainingLessons({
   className,
   grade,
@@ -51,6 +59,8 @@ export function calculateRemainingLessons({
 
     let normalCountThatDay = 0;
     let actualCountThatDay = 0;
+    let dateLevelExcludedCount = 0;
+    const activityExclusionPeriods = new Map(); // activityName -> number[] (이 날짜에 이 학급에 실제로 영향을 준 교시만)
 
     for (const period of periodsSet) {
       const override = overridesForDate.find((o) => o.period === period);
@@ -62,21 +72,63 @@ export function calculateRemainingLessons({
 
       normalCountThatDay += 1;
 
-      const excluded =
-        !!schedule &&
-        (isClassExcludedForDate(schedule, grade) || !isPeriodRegularForDate(schedule, { grade, period }));
+      // 날짜 단위 학사일정(noRegularClasses/noClassGrades/regularPeriods/affectedGrades/
+      // affectedPeriods)은 schedule(=confirmed일 때만 값이 있음)에 그대로 묶여 있다.
+      // classActivities는 rawSchedule에서 직접 꺼내 전달한다 - 그 날짜 문서 전체가 아직
+      // confirmed가 아니어도(schedule이 null이어도), 교사가 개별적으로 confirmed한
+      // 활동은 반영되어야 하기 때문이다(isPeriodRegularForDate/isExcludedByClassActivity가
+      // 활동 하나하나의 status를 다시 확인한다).
+      //
+      // 아래 excludedByDateLevel/matchedActivity 분리는 계산 결과(excluded)를 바꾸지
+      // 않고, "실제로 이 교시를 제외시킨 원인이 날짜 단위 학사일정인지 classActivity
+      // 하나인지"만 계산 근거(basis) 표시용으로 구분한다 - 최종 excluded 판정 자체는
+      // 기존 isPeriodRegularForDate/isClassExcludedForDate 호출 결과 그대로다.
+      const excludedByDateLevel =
+        (!!schedule && isClassExcludedForDate(schedule, grade)) ||
+        !isPeriodRegularForDate(schedule, { grade, period, className: effectiveClassName });
+      const matchedActivity = excludedByDateLevel
+        ? null
+        : findExcludingClassActivity(rawSchedule?.classActivities, { grade, period, className: effectiveClassName });
+      const excluded = excludedByDateLevel || !!matchedActivity;
 
-      if (!excluded) actualCountThatDay += 1;
+      if (!excluded) {
+        actualCountThatDay += 1;
+      } else if (excludedByDateLevel) {
+        dateLevelExcludedCount += 1;
+      } else {
+        const key = matchedActivity.activityName || "수업 제외 일정";
+        if (!activityExclusionPeriods.has(key)) activityExclusionPeriods.set(key, []);
+        activityExclusionPeriods.get(key).push(period);
+      }
     }
 
     baseCount += normalCountThatDay;
 
-    if (schedule && normalCountThatDay > actualCountThatDay) {
+    // schedule(confirmed 날짜 해석)이 없어도(null) classActivities만으로 줄어들 수
+    // 있으므로, 더 이상 schedule 존재 여부로 이 근거를 걸러내지 않는다 - 실제로 줄어든
+    // 차시가 있었는지(dateLevelExcludedCount > 0)만 본다. label은 날짜 단위 해석이
+    // 있을 때만 그 원문을 쓰고, 없으면 일반적인 문구로 대체한다.
+    if (dateLevelExcludedCount > 0) {
       basis.push({
         date,
-        label: schedule.originalText || "학사일정",
-        delta: -(normalCountThatDay - actualCountThatDay),
+        label: schedule?.originalText || "학교 활동",
+        delta: -dateLevelExcludedCount,
         source: "academic_schedule",
+      });
+    }
+
+    // classActivities(수업 제외 일정)로 실제 제외된 교시를 활동별로 묶어 근거에 추가한다.
+    // periods는 activity.periods 전체가 아니라 "이 학급의 실제 교과 수업과 겹쳐 실제로
+    // 제외된 교시"만 담는다(위 루프에서 normalCountThatDay에 집계된 교시만 후보가 됨).
+    for (const [activityName, periods] of activityExclusionPeriods) {
+      const sortedPeriods = [...periods].sort((a, b) => a - b);
+      basis.push({
+        date,
+        label: `${activityName} · ${sortedPeriods.join(", ")}교시 수업 제외`,
+        delta: -sortedPeriods.length,
+        source: "class_activity",
+        activityName,
+        periods: sortedPeriods,
       });
     }
 

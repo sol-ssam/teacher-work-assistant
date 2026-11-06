@@ -41,8 +41,19 @@ export function getEffectiveDayTimetable(date, { timetable, timetableOverrides, 
       const periodGrade = className ? gradeOfClassName(className) : null;
 
       const excludedByGrade = !!schedule && periodGrade && isClassExcludedForDate(schedule, periodGrade);
+      // excludedByGrade(noRegularClasses/noClassGrades)는 날짜 전체 해석이 confirmed일
+      // 때만 반영한다(schedule이 null이면 자동으로 제외). excludedByPeriod는 classActivities를
+      // rawSchedule에서 그대로 넘겨 그 날짜 문서가 confirmed가 아니어도 개별 confirmed
+      // 활동은 반영되게 한다 - isPeriodRegularForDate 안에서 regularPeriods/affectedGrades/
+      // affectedPeriods는 여전히 schedule(confirmed일 때만 값 있음) 쪽에 묶여 있다.
       const excludedByPeriod =
-        !!schedule && periodGrade && !isPeriodRegularForDate(schedule, { grade: periodGrade, period });
+        !!periodGrade &&
+        !isPeriodRegularForDate(schedule, {
+          grade: periodGrade,
+          period,
+          className,
+          classActivities: rawSchedule?.classActivities,
+        });
       const excluded = !!className && (excludedByGrade || excludedByPeriod);
 
       return {

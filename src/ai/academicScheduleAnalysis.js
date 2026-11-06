@@ -56,9 +56,57 @@ const candidateSchema = Schema.object({
   ],
 });
 
+// classActivities(school_day_schedules.classActivities)로 저장될 "교시별 학교 자체
+// 교육활동" 후보. 기존 candidates(날짜 전체의 학사일정 해석)와는 완전히 별개의 개념이다 -
+// candidates는 "그 날짜가 평소와 다르게 운영되는가"를, classActivityCandidates는
+// "그 날짜·학년(·반)·교시에 일반 교과수업 대신 학교 자체 활동이 있는가"를 다룬다.
+// 반 범위(classScope/classNumbers)는 AI가 실제 className 문자열(예: "301")을 직접
+// 만들어내지 않는다 - 이 앱의 className 표기는 교사마다 다를 수 있어(예: "301" 또는
+// "3-1"), AI가 임의로 형식을 정하면 실제 시간표와 맞지 않을 위험이 있다. 대신 학년 안의
+// "반 번호"만 숫자로 뽑고, 화면(MonthlyProgressPage.jsx)이 실제 담당 반 목록과 대조해
+// 결정론적으로 className으로 바꾼다.
+const classActivityCandidateSchema = Schema.object({
+  properties: {
+    date: Schema.string({ description: "YYYY-MM-DD 형식의 날짜" }),
+    activityName: Schema.string({
+      description:
+        "문서에 적힌 활동명을 가능한 원문 그대로 사용해라. 임의로 축약하거나 일반화하지 마라(예: 문서에 'AI 윤리 및 디지털 시민교육'이라고 적혀 있으면 'AI교육'처럼 줄이지 말고 그대로 사용). 예: '롯데월드', 'AI윤리교육', '장애교육'.",
+    }),
+    originalText: Schema.string({
+      description: "문서에 실제로 적힌 문구를 그대로 옮긴 것. 절대 요약하거나 바꿔 쓰지 마라.",
+    }),
+    grades: Schema.array({
+      items: Schema.integer(),
+      description: "이 활동의 대상 학년. 문서에서 명확히 확정할 수 있는 학년만 넣어라. 확정할 수 없으면 비워두고 status를 needs_review로 해라.",
+    }),
+    classScope: Schema.enumString({
+      description: "all=해당 학년 전체 반이 대상. partial=일부 반만 대상(이 경우 classNumbers를 반드시 채워라).",
+      enum: ["all", "partial"],
+    }),
+    classNumbers: Schema.array({
+      items: Schema.integer(),
+      description: "classScope가 partial일 때만 채운다. 대상 반 '번호'만(학급 전체 호칭이 아니라 숫자만). 예: '1~4반'→[1,2,3,4], '1,3,5반'→[1,3,5]. classScope가 all이면 빈 배열로 둬라.",
+    }),
+    periods: Schema.array({
+      items: Schema.integer(),
+      description: "활동이 적용되는 교시 번호 목록. '1~6교시'→[1,2,3,4,5,6]처럼 구간은 전부 풀어서 나열해라. 정확한 교시를 알 수 없으면 비워두고 status를 needs_review로 해라 - 추측 금지.",
+    }),
+    suggestedExcluded: Schema.boolean({
+      description: "이 활동 때문에 그 교시의 일반 교과수업이 이루어지지 않는다고 볼 수 있는지에 대한 '제안값'일 뿐이다(최종 결정 아님) - 이 후보를 만들 정도로 특정 교시를 차지하는 프로그램이라면 활동의 종류와 관계없이 기본적으로 true로 제안해라. 항상 명시적으로 채워라(생략 금지).",
+    }),
+    status: Schema.enumString({
+      description: "confirmed=학년·교시가 명확해 바로 검토 가능. needs_review=학년/반/교시 중 하나라도 불명확해 교사 확인이 필요함.",
+      enum: ["confirmed", "needs_review"],
+    }),
+    memo: Schema.string({ description: "참고할 짧은 설명 (선택)" }),
+  },
+  optionalProperties: ["grades", "classScope", "classNumbers", "periods", "suggestedExcluded", "memo"],
+});
+
 const extractionSchema = Schema.object({
   properties: {
     candidates: Schema.array({ items: candidateSchema }),
+    classActivityCandidates: Schema.array({ items: classActivityCandidateSchema }),
   },
 });
 
@@ -169,7 +217,88 @@ originalText는 원문 그대로, memo에는 "영어 듣기 평가의 대상 학
 # 보수적으로 판단해라
 너는 남은 수업 횟수를 직접 계산하지 않는다. 코드가 나중에 school_day_schedules를 바탕으로
 계산한다. 애매한 내용을 억지로 confirmed로 만드는 것보다 needs_review로 남기는 편이 항상
-더 안전하다. 조금이라도 확신이 서지 않으면 needs_review를 선택해라.`;
+더 안전하다. 조금이라도 확신이 서지 않으면 needs_review를 선택해라.
+
+# 추가 임무: 교시별 학교 자체 교육활동 후보 (classActivityCandidates)
+위 candidates(날짜 단위 학사일정 해석)와는 완전히 별개의 임무다. candidates 판단 규칙은
+그대로 적용하고, 이번에는 같은 문서에서 다음 성격의 내용을 classActivityCandidates
+배열로 추가로 뽑아라:
+
+"표의 정규 교과수업이 아니라, 특정 날짜·학년(또는 일부 반)·교시 칸에 별도의
+활동명/프로그램명이 적혀 있다"
+
+는 내용이면 활동의 종류·성격과 관계없이 전부 후보로 뽑아라. 예시로 "롯데월드",
+"AI윤리교육", "장애교육", "인성교육", "자치", "자치활동", "동아리", "봉사", "진로",
+"진로체험", "성교육", "학교폭력예방교육", "안전교육", "디지털 시민교육", "금융교육",
+"각종 특강", "뮤지컬 관람", "스케이트", "영화 관람", "고입설명회", "특성화고 설명회",
+"대학생 학과 멘토링", "도자기 컵 만들기", "흡연교육", "도박예방교육", "졸업식", "축제",
+"학년 행사", "반별 프로그램", "전환기 프로그램" 등이 있지만, 이 목록에 있는 단어만
+찾으라는 뜻이 아니다 - 목록에 없는 활동명이라도 같은 방식으로 날짜·학년·교시 칸에
+적혀 있으면 똑같이 후보로 뽑아라.
+
+## 매우 중요 - 너의 역할은 "구조화"이고, "이 활동이 수업을 대체하는가"는 교사의 역할이다
+너는 이 활동이 실제로 정규수업을 대체하는지, 교육 활동이므로 수업으로 인정될 수
+있는지를 판단하지 않는다. "동아리/자치/봉사/진로/설명회는 정규수업일 수도 있어
+애매하다", "이 활동이 수업을 실제로 대체하는지 불확실하다" 같은 이유로 후보 생성
+자체를 건너뛰거나 버리지 마라. 활동명과 날짜를 읽을 수 있다면, 학년/반/교시 중
+일부가 불명확해도(아래 각 항목의 안내에 따라 해당 필드만 비워두고 status를
+needs_review로 하되) 후보 자체는 반드시 만들어라. 이 활동을 실제 수업 횟수에서
+최종적으로 제외할지는 교사가 검토 화면에서 "수업 횟수에서 제외" 체크박스로 직접
+결정한다 - 너는 후보를 빠짐없이 구조화하는 역할만 한다.
+
+## 수업과 무관한 일정은 제외해라
+"고입 원서접수", "합격자 발표", "서류 제출"처럼 교과수업 운영 자체에 영향을 주지 않는
+단순 안내·행정 일정은 classActivityCandidates에 넣지 마라.
+
+## 표의 헤더/메타데이터는 활동이 아니다
+"날짜", "요일", "1교시"~"7교시" 같은 교시 칸 이름 자체, "학년", "반", "비고", "담당",
+"장소", "점심시간", "등교", "하교"처럼 표의 틀을 이루는 헤더/메타데이터는 활동명이
+아니므로 classActivityCandidates로 만들지 마라. 그 칸 안에 실제로 적힌 별도
+프로그램/활동명만 후보로 뽑아라.
+
+## 날짜 단위 학사일정과 중복 생성 금지
+"재량휴업일", "방학", "개교기념일", 시험, "정규수업 없음", 특정 학년 전체 수업 없음,
+"금요일 수업"/"월요일 수업" 같은 요일 대체 운영처럼 위 candidates가 이미 다루는
+날짜 단위 해석은 classActivityCandidates로 다시 만들지 마라 - 그 정보는 candidates
+배열에만 담는다. classActivityCandidates는 그 날짜 안에서 특정 학년·반·교시를
+차지한 개별 프로그램에만 쓴다.
+
+## 대상 학년(grades)
+문서에 명시된 학년만 넣어라. 추측하지 마라. 확정할 수 없으면 비워두고 status를
+needs_review로 해라.
+
+## 대상 반(classScope/classNumbers) - 매우 중요
+- 그 학년 전체가 대상이면 classScope: "all", classNumbers: [].
+- "1~4반", "5,7반"처럼 일부 반만 명시돼 있으면 classScope: "partial"로 하고
+  classNumbers에 반 "번호"만 정확히 나열해라(예: "1~4반"→[1,2,3,4], "1,3,5반"→[1,3,5]).
+- "3학년 1~4반 AI윤리교육"과 "3학년 5~7반 AI윤리교육"처럼 같은 학년에서 반 그룹별로
+  교시가 다르면, 절대 하나로 합치지 말고 각각 별도의 classActivityCandidate로 따로
+  만들어라(classNumbers도 각 그룹만 따로).
+- 반 번호를 정확히 알 수 없으면 classScope를 임의로 "all"로 단정하지 말고 status를
+  needs_review로 남겨라.
+
+## 교시(periods)
+"1~6교시", "4교시", "6~7교시"처럼 명시된 교시만 정확히 나열해라(구간은 전부 풀어서
+나열 - candidates의 regularPeriods와 같은 표기 규칙). 교시가 전혀 적혀 있지 않으면
+periods를 비우고 status를 needs_review로 둬라 - 추측하지 마라.
+
+## 같은 날 여러 활동
+"4교시 장애교육 / 5교시 인성교육 / 6~7교시 자치"처럼 같은 날 서로 다른 교시에 서로
+다른 활동이 있으면, 하나로 합치지 말고 활동별로 별도의 classActivityCandidate를 각각
+만들어라.
+
+## 수업 제외 추천값(suggestedExcluded) - 최종 결정이 아니다
+너는 추천만 한다. 실제 적용 여부는 교사가 검토 화면에서 "수업 횟수에서 제외"
+체크박스로 직접 켜고 끈다. 문서상 특정 교시를 명확히 차지하는 프로그램이라서
+classActivityCandidate를 만들었다면, 활동의 종류·성격과 관계없이 기본적으로
+suggestedExcluded: true로 제안해라. "동아리/자치/봉사/진로교육/설명회는 교사
+상황에 따라 정규 수업으로 인정될 수도 있어 애매하다"는 이유로 suggestedExcluded를
+false로 깎아내리지 마라 - 그 최종 판단은 교사의 몫이다. classActivityCandidate를
+만들 때는 suggestedExcluded 필드를 생략하지 말고 항상 명시적으로 채워라.
+
+## status
+학년·교시가 명확하면 confirmed, 학년/반/교시 중 하나라도 불명확하면 needs_review로
+남겨라.`;
 }
 
 // AI가 scheduleDayOverride를 채웠더라도, 원문에 "OO요일 수업"/"OO요일 시간표"처럼 명시적인
@@ -211,7 +340,7 @@ export async function analyzeAcademicSchedule({ content }) {
   }
 
   const candidates = Array.isArray(parsed.candidates) ? parsed.candidates : [];
-  return candidates
+  const normalizedCandidates = candidates
     .filter((c) => c.date && c.originalText)
     .map((c, i) => {
       const rawOverride = c.scheduleDayOverride || "";
@@ -231,4 +360,32 @@ export async function analyzeAcademicSchedule({ content }) {
         excluded: false,
       };
     });
+
+  // classNames는 여기서 만들지 않는다 - AI는 반 "번호"만 주고, 실제 className
+  // 문자열(교사마다 다른 표기)로의 변환은 화면(MonthlyProgressPage.jsx)이 실제 담당
+  // 반 목록과 대조해 결정론적으로 한다. classScope는 화면에서 "전체 반/일부 반" 토글
+  // 상태로만 쓰이고 그대로 저장되지 않는다(저장 데이터는 classNames만으로 "전체 반"을
+  // 표현한다 - 빈 배열 하나로 통일).
+  const classActivityCandidates = Array.isArray(parsed.classActivityCandidates)
+    ? parsed.classActivityCandidates
+    : [];
+  const normalizedClassActivityCandidates = classActivityCandidates
+    .filter((c) => c.date && c.activityName)
+    .map((c, i) => ({
+      _key: `actcand-${Date.now()}-${i}`,
+      date: c.date,
+      activityName: c.activityName,
+      originalText: c.originalText || c.activityName,
+      grades: Array.isArray(c.grades) ? c.grades : [],
+      classScope: c.classScope === "partial" ? "partial" : "all",
+      classNumbers: Array.isArray(c.classNumbers) ? c.classNumbers : [],
+      classNames: [], // 화면에서 grades+classNumbers를 실제 담당 반과 대조해 채운다.
+      periods: Array.isArray(c.periods) ? c.periods : [],
+      excluded: !!c.suggestedExcluded,
+      status: c.status || "needs_review",
+      memo: c.memo || "",
+      ignored: false,
+    }));
+
+  return { candidates: normalizedCandidates, classActivityCandidates: normalizedClassActivityCandidates };
 }

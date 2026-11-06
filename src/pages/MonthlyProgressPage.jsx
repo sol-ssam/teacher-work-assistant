@@ -58,6 +58,21 @@ function parseNumberList(text) {
   return nums.length > 0 ? nums : undefined;
 }
 
+// school_day_schedules.classActivities 병합 시 "같은 활동"인지 판단한다(이름+학년+반+교시가
+// 전부 같으면 같은 활동으로 본다) - 같은 문서를 다시 분석/저장해도 중복으로 쌓이지 않고
+// 그 자리를 갱신하게 하기 위해서다. source가 다른 항목끼리는 이 함수로 비교하지 않는다
+// (호출부가 source가 같은 것만 걸러서 비교한다) - 다른 출처(예: 수동 입력) 활동은 내용이
+// 우연히 같아 보여도 이 비교 대상에 들지 않아 절대 덮어쓰이지 않는다.
+function classActivityContentEquals(a, b) {
+  const normList = (arr) => (Array.isArray(arr) ? [...arr].map(String).sort().join(",") : "");
+  return (
+    String(a.activityName || "").trim() === String(b.activityName || "").trim() &&
+    normList(a.periods) === normList(b.periods) &&
+    normList(a.grades) === normList(b.grades) &&
+    normList(a.classNames) === normList(b.classNames)
+  );
+}
+
 const emptyScheduleForm = {
   date: "",
   originalText: "",
@@ -1181,6 +1196,278 @@ export default function MonthlyProgressPage() {
     reloadSchedules();
   }
 
+  // ===== 저장된 classActivities(수업 제외 일정) 확인/수정/삭제 =====
+  // 날짜 문서(school_day_schedules) 자체의 상태(editingScheduleId/scheduleForm)와는
+  // 완전히 별개의 state다 - 날짜 단위 수정과 활동 단위 수정이 동시에 서로 다른
+  // 날짜에서 진행돼도 섞이지 않는다. editingActivity는 "어느 문서의 몇 번째 활동"만
+  // 가리키고, activityEditForm이 실제 편집 중인 값을 담는다.
+  const [editingActivity, setEditingActivity] = useState(null); // { scheduleId, index } | null
+  const [activityEditForm, setActivityEditForm] = useState(null);
+
+  function startEditActivity(schedule, index, activity) {
+    setEditingActivity({ scheduleId: schedule.id, index });
+    setActivityEditForm({
+      activityName: activity.activityName ?? "",
+      grades: Array.isArray(activity.grades) ? activity.grades : [],
+      classScope: Array.isArray(activity.classNames) && activity.classNames.length > 0 ? "partial" : "all",
+      classNames: Array.isArray(activity.classNames) ? activity.classNames : [],
+      periods: Array.isArray(activity.periods) ? activity.periods : [],
+      excluded: !!activity.excluded,
+    });
+  }
+
+  function cancelEditActivity() {
+    setEditingActivity(null);
+    setActivityEditForm(null);
+  }
+
+  function updateActivityEditForm(patch) {
+    setActivityEditForm((prev) => (prev ? { ...prev, ...patch } : prev));
+  }
+
+  function updateActivityEditFormNumberList(field, text) {
+    const nums = String(text || "")
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean)
+      .map(Number)
+      .filter((n) => !Number.isNaN(n));
+    updateActivityEditForm({ [field]: nums });
+  }
+
+  // 후보 검토 단계(updateActivityCandidateGrades)와 같은 원칙이지만, 이미 저장된
+  // 활동은 classNumbers를 따로 들고 있지 않다(저장 데이터는 classNames만 가진다) -
+  // 그래서 현재 classNames에서 반 "번호"만 거꾸로 뽑아 새 학년 기준으로 다시 매칭한다.
+  function updateActivityEditFormGrades(text) {
+    const nums = String(text || "")
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean)
+      .map(Number)
+      .filter((n) => !Number.isNaN(n));
+    setActivityEditForm((prev) => {
+      if (!prev) return prev;
+      if (prev.classScope !== "partial") return { ...prev, grades: nums };
+      const oldNumbers = prev.classNames
+        .map((cn) => Number(parseClassCode(cn).classNumber))
+        .filter((n) => !Number.isNaN(n));
+      const gradeClasses = classesForGrades(nums);
+      const remapped = oldNumbers
+        .map((n) => gradeClasses.find((cn) => parseClassCode(cn).classNumber === String(n)))
+        .filter(Boolean);
+      return { ...prev, grades: nums, classNames: remapped };
+    });
+  }
+
+  function setActivityEditFormClassScope(scope) {
+    setActivityEditForm((prev) => {
+      if (!prev) return prev;
+      if (scope === "all") return { ...prev, classScope: "all", classNames: [] };
+      return { ...prev, classScope: "partial" };
+    });
+  }
+
+  function toggleActivityEditFormClassName(className) {
+    setActivityEditForm((prev) => {
+      if (!prev) return prev;
+      const has = prev.classNames.includes(className);
+      return { ...prev, classNames: has ? prev.classNames.filter((n) => n !== className) : [...prev.classNames, className] };
+    });
+  }
+
+  // 활동 하나만 수정/삭제한다 - payload에 classActivities만 담아 보내므로(updateDocById는
+  // Firestore의 부분 merge라 지정하지 않은 필드는 그대로 남는다) 그 날짜 문서의 status나
+  // 다른 학사일정 필드(noRegularClasses 등)는 전혀 건드리지 않는다. 다른 classActivities도
+  // 배열의 나머지 항목을 그대로 유지하므로 영향이 없다.
+  async function saveActivityEdit() {
+    if (!editingActivity || !activityEditForm) return;
+    const schedule = schedules.find((s) => s.id === editingActivity.scheduleId);
+    if (!schedule) return;
+    if (activityEditForm.classScope === "partial" && activityEditForm.classNames.length === 0) return;
+
+    const existingActivities = Array.isArray(schedule.classActivities) ? schedule.classActivities : [];
+    const nextActivities = existingActivities.map((a, i) =>
+      i === editingActivity.index
+        ? {
+            ...a,
+            activityName: activityEditForm.activityName,
+            grades: activityEditForm.grades,
+            classNames: activityEditForm.classScope === "partial" ? activityEditForm.classNames : [],
+            periods: activityEditForm.periods,
+            excluded: activityEditForm.excluded,
+            status: "confirmed", // 교사가 지금 직접 확인/수정했으므로 confirmed로 유지한다.
+          }
+        : a
+    );
+    await updateDocById("school_day_schedules", schedule.id, {
+      classActivities: nextActivities,
+      updatedAt: new Date().toISOString(),
+    });
+    cancelEditActivity();
+    reloadSchedules();
+  }
+
+  // 활동 하나만 배열에서 제거한다. 그 날짜 문서의 다른 classActivities와 기존 학사일정
+  // 필드(noRegularClasses 등)는 전혀 건드리지 않는다 - classActivities만 있던 최소
+  // 문서에서 마지막 활동을 지워도 문서 자체는 삭제하지 않는다(애매하게 문서를 지우기보다
+  // 빈 classActivities 배열만 남기는 안전한 쪽을 선택한다).
+  async function deleteClassActivity(schedule, index) {
+    const existingActivities = Array.isArray(schedule.classActivities) ? schedule.classActivities : [];
+    const nextActivities = existingActivities.filter((_, i) => i !== index);
+    await updateDocById("school_day_schedules", schedule.id, {
+      classActivities: nextActivities,
+      updatedAt: new Date().toISOString(),
+    });
+    if (editingActivity?.scheduleId === schedule.id && editingActivity?.index === index) {
+      cancelEditActivity();
+    }
+    reloadSchedules();
+  }
+
+  // 저장된 classActivity 하나를 "N학년 1·2반 · 1,2교시"처럼 짧게 설명한다.
+  function formatActivityTargetLabel(activity) {
+    const gradeText =
+      Array.isArray(activity.grades) && activity.grades.length > 0 ? `${activity.grades.join(",")}학년` : "학년 미지정";
+    const classText =
+      Array.isArray(activity.classNames) && activity.classNames.length > 0
+        ? activity.classNames.map((cn) => formatClassShortName(cn)).join("·")
+        : "전체 반";
+    const periodText =
+      Array.isArray(activity.periods) && activity.periods.length > 0 ? `${activity.periods.join(",")}교시` : "교시 미지정";
+    return `${gradeText} ${classText} · ${periodText}`;
+  }
+
+  // ===== "수업 제외 일정" 직접 추가(AI 분석 없이) =====
+  // AI 후보 검토 단계를 거치지 않고 교사가 직접 입력한 뒤 바로 confirmed classActivity로
+  // 저장한다. 데이터 구조·검증 방식은 저장된 활동 수정 폼(activityEditForm)과 동일한
+  // 원칙을 그대로 쓴다 - classNumbers가 없으므로 학년을 바꾸면 classNames에서 반 번호를
+  // 역추출해 다시 매칭한다(updateActivityEditFormGrades와 같은 로직).
+  const emptyDirectActivityForm = {
+    date: "",
+    activityName: "",
+    grades: [],
+    classScope: "all",
+    classNames: [],
+    periods: [],
+    excluded: true, // 교사가 직접 등록하는 목적상 기본값은 "수업 횟수에서 제외"
+  };
+  const [directActivityForm, setDirectActivityForm] = useState(emptyDirectActivityForm);
+  const [savingDirectActivity, setSavingDirectActivity] = useState(false);
+
+  function updateDirectActivityForm(patch) {
+    setDirectActivityForm((prev) => ({ ...prev, ...patch }));
+  }
+
+  function updateDirectActivityFormNumberList(field, text) {
+    const nums = String(text || "")
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean)
+      .map(Number)
+      .filter((n) => !Number.isNaN(n));
+    updateDirectActivityForm({ [field]: nums });
+  }
+
+  function updateDirectActivityFormGrades(text) {
+    const nums = String(text || "")
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean)
+      .map(Number)
+      .filter((n) => !Number.isNaN(n));
+    setDirectActivityForm((prev) => {
+      if (prev.classScope !== "partial") return { ...prev, grades: nums };
+      const oldNumbers = prev.classNames
+        .map((cn) => Number(parseClassCode(cn).classNumber))
+        .filter((n) => !Number.isNaN(n));
+      const gradeClasses = classesForGrades(nums);
+      const remapped = oldNumbers
+        .map((n) => gradeClasses.find((cn) => parseClassCode(cn).classNumber === String(n)))
+        .filter(Boolean);
+      return { ...prev, grades: nums, classNames: remapped };
+    });
+  }
+
+  function setDirectActivityFormClassScope(scope) {
+    setDirectActivityForm((prev) => {
+      if (scope === "all") return { ...prev, classScope: "all", classNames: [] };
+      return { ...prev, classScope: "partial" };
+    });
+  }
+
+  function toggleDirectActivityFormClassName(className) {
+    setDirectActivityForm((prev) => {
+      const has = prev.classNames.includes(className);
+      return { ...prev, classNames: has ? prev.classNames.filter((n) => n !== className) : [...prev.classNames, className] };
+    });
+  }
+
+  function closeDirectActivityForm() {
+    setShowDirectActivityForm(false);
+    setDirectActivityForm(emptyDirectActivityForm);
+  }
+
+  // 저장 버튼의 disabled 조건과 동일한 필수값 검사를 한 번 더 한다(기존 저장 버튼들의
+  // "비활성화로 막기" 방식을 그대로 따른다 - 새 alert/validation 시스템을 만들지 않는다).
+  function canSaveDirectActivity(form) {
+    return (
+      !!form.date &&
+      !!form.activityName.trim() &&
+      form.grades.length > 0 &&
+      form.periods.length > 0 &&
+      !(form.classScope === "partial" && form.classNames.length === 0)
+    );
+  }
+
+  // 날짜에 기존 school_day_schedules 문서가 있으면(이미 AI로 분석한 학사일정/
+  // classActivities가 있을 수 있음) 그 문서의 classActivities 배열에만 새 활동을
+  // 추가한다(status/originalText/noRegularClasses 등 다른 필드는 전혀 건드리지 않음 -
+  // saveActivityEdit/deleteClassActivity와 동일한 "classActivities만 보내는" 최소
+  // payload 원칙). 문서가 없으면 classActivities만 담은 최소 문서를 confirmed로 새로
+  // 만든다(AI 후보 저장 시 신규 문서를 만드는 것과 동일한 패턴).
+  async function saveDirectActivity() {
+    if (!user || !canSaveDirectActivity(directActivityForm)) return;
+    setSavingDirectActivity(true);
+    try {
+      const now = new Date().toISOString();
+      const newActivity = {
+        activityName: directActivityForm.activityName.trim(),
+        originalText: "",
+        grades: directActivityForm.grades,
+        classNames: directActivityForm.classScope === "partial" ? directActivityForm.classNames : [],
+        periods: directActivityForm.periods,
+        excluded: directActivityForm.excluded,
+        status: "confirmed",
+        source: "manual",
+      };
+
+      const existingDoc = schedules.find((s) => s.date === directActivityForm.date);
+      const existingActivities = Array.isArray(existingDoc?.classActivities) ? existingDoc.classActivities : [];
+      const nextActivities = [...existingActivities, newActivity];
+
+      if (existingDoc) {
+        await updateDocById("school_day_schedules", existingDoc.id, {
+          classActivities: nextActivities,
+          updatedAt: now,
+        });
+      } else {
+        await createDoc("school_day_schedules", user.uid, {
+          date: directActivityForm.date,
+          status: "confirmed",
+          originalText: "",
+          classActivities: nextActivities,
+          createdAt: now,
+          updatedAt: now,
+        });
+      }
+
+      closeDirectActivityForm();
+      reloadSchedules();
+    } finally {
+      setSavingDirectActivity(false);
+    }
+  }
+
   // ===== 학사일정 파일 업로드 → AI 분석 → 검토 → confirmed만 저장 =====
   // AI 분석 결과는 절대 곧바로 Firestore에 쓰지 않는다. candidates 상태에 담아두고,
   // 사용자가 각 항목을 직접 수정/제외/확정한 뒤 "선택한 항목 저장"을 눌러야만
@@ -1189,6 +1476,10 @@ export default function MonthlyProgressPage() {
   const [analyzingSchedule, setAnalyzingSchedule] = useState(false);
   const [scheduleAnalyzeError, setScheduleAnalyzeError] = useState(null);
   const [candidates, setCandidates] = useState(null); // null = 검토할 후보 없음
+  // 교시별 학교 자체 교육활동 후보(school_day_schedules.classActivities로 저장될 것) -
+  // candidates(날짜 단위 학사일정 해석)와 완전히 별개의 후보 목록이다. 같은 분석
+  // 호출에서 함께 받아오지만 검토/저장 UI에서는 별도 섹션으로 보여준다.
+  const [classActivityCandidates, setClassActivityCandidates] = useState(null);
   const [savingCandidates, setSavingCandidates] = useState(false);
 
   async function analyzeScheduleFile() {
@@ -1219,12 +1510,14 @@ export default function MonthlyProgressPage() {
         content = { kind: "text", text: await wordToText(scheduleFile) };
       }
 
-      const result = await analyzeAcademicSchedule({ content });
-      if (result.length === 0) {
+      const { candidates: foundCandidates, classActivityCandidates: foundActivityCandidates } =
+        await analyzeAcademicSchedule({ content });
+      if (foundCandidates.length === 0 && foundActivityCandidates.length === 0) {
         setScheduleAnalyzeError("문서에서 평소와 다른 특별 일정을 찾지 못했습니다.");
         return;
       }
-      setCandidates(result);
+      setCandidates(foundCandidates.length > 0 ? foundCandidates : null);
+      setClassActivityCandidates(foundActivityCandidates.length > 0 ? foundActivityCandidates : null);
     } catch (error) {
       // 개발 진단용 로그. 파일 원문/base64/개인정보/인증정보는 절대 출력하지 않고,
       // 오류 객체 자체의 구조적 정보(이름/메시지/코드/상태/원인 등)만 남긴다.
@@ -1255,6 +1548,7 @@ export default function MonthlyProgressPage() {
     setScheduleFile(null);
     setScheduleAnalyzeError(null);
     setCandidates(null);
+    setClassActivityCandidates(null);
   }
 
   function updateCandidate(key, patch) {
@@ -1271,6 +1565,89 @@ export default function MonthlyProgressPage() {
     updateCandidate(key, { [field]: nums });
   }
 
+  // ===== 수업 제외 일정 후보(classActivityCandidates) 전용 helper =====
+  // updateCandidate/updateCandidateNumberList와 완전히 같은 패턴을 그대로 따른다 -
+  // 대상 state만 다르다.
+  function updateActivityCandidate(key, patch) {
+    setClassActivityCandidates((prev) => prev.map((c) => (c._key === key ? { ...c, ...patch } : c)));
+  }
+
+  function updateActivityCandidateNumberList(key, field, text) {
+    const nums = String(text || "")
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean)
+      .map(Number)
+      .filter((n) => !Number.isNaN(n));
+    updateActivityCandidate(key, { [field]: nums });
+  }
+
+  // "대상 학년"을 수정할 때 전용 - 일반 updateActivityCandidateNumberList와 달리, 이미
+  // "일부 반"을 선택해 classNames가 채워진 상태였다면 그 classNames를 새 학년 기준으로
+  // 다시 계산한다. 그대로 두면 grades:[2]인데 classNames:["301",...](3학년 반)처럼
+  // 서로 모순된 값이 저장되어, 어떤 반에도 적용되지 않는 죽은 설정이 된다. classNumbers
+  // (처음 "일부 반"으로 바꿀 때 기준이 된 반 "번호")는 학년이 바뀌어도 그대로다 -
+  // "1~4반"이라는 의도 자체는 유지하고, 그 번호에 대응하는 새 학년의 실제 className만
+  // 다시 찾는다. 새 학년에 대응하는 반이 없으면 classNames가 빈 배열이 되고, "일부 반"인데
+  // classNames가 비어 있으면 저장 시 자동으로 제외된다(saveConfirmedCandidates의 기존
+  // 안전장치를 그대로 재사용).
+  function updateActivityCandidateGrades(key, text) {
+    const nums = String(text || "")
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean)
+      .map(Number)
+      .filter((n) => !Number.isNaN(n));
+    setClassActivityCandidates((prev) =>
+      prev.map((c) => {
+        if (c._key !== key) return c;
+        if (c.classScope !== "partial") return { ...c, grades: nums };
+        const gradeClasses = classesForGrades(nums);
+        const remapped = (c.classNumbers || [])
+          .map((n) => gradeClasses.find((cn) => parseClassCode(cn).classNumber === String(n)))
+          .filter(Boolean);
+        return { ...c, grades: nums, classNames: remapped };
+      })
+    );
+  }
+
+  // 후보의 grades(학년) 목록을 기준으로, 이 교사가 실제로 담당하는 반 중 그 학년에
+  // 속하는 것만 뽑는다. "일부 반" 체크박스에 보여줄 실제 선택지이자, 최종 저장 시
+  // classNames에 들어갈 수 있는 유일한 값의 범위이기도 하다 - AI가 제안한 반 번호를
+  // 그대로 믿지 않고 항상 실제 시간표(allOwnedClasses)와 대조한다.
+  function classesForGrades(grades) {
+    if (!Array.isArray(grades) || grades.length === 0) return [];
+    const gradeStrings = grades.map(String);
+    return allOwnedClasses.filter((c) => gradeStrings.includes(String(gradeOfClassName(c))));
+  }
+
+  // classScope 토글("전체 반"/"일부 반") - "일부 반"으로 처음 바꿀 때는 AI가 제안한
+  // classNumbers를 실제 담당 반과 대조해 한 번 미리 체크해 둔다(교사가 매번 처음부터
+  // 다시 고르지 않아도 되게).
+  function setActivityCandidateClassScope(key, scope) {
+    setClassActivityCandidates((prev) =>
+      prev.map((c) => {
+        if (c._key !== key) return c;
+        if (scope === "all") return { ...c, classScope: "all", classNames: [] };
+        const gradeClasses = classesForGrades(c.grades);
+        const suggested = (c.classNumbers || [])
+          .map((n) => gradeClasses.find((cn) => parseClassCode(cn).classNumber === String(n)))
+          .filter(Boolean);
+        return { ...c, classScope: "partial", classNames: suggested };
+      })
+    );
+  }
+
+  function toggleActivityCandidateClassName(key, className) {
+    setClassActivityCandidates((prev) =>
+      prev.map((c) => {
+        if (c._key !== key) return c;
+        const has = c.classNames.includes(className);
+        return { ...c, classNames: has ? c.classNames.filter((n) => n !== className) : [...c.classNames, className] };
+      })
+    );
+  }
+
   // date + originalText가 기존 school_day_schedules와 같으면 중복 후보로 표시만 하고,
   // 저장 시 무조건 덮어쓰지 않는다 - 사용자가 직접 보고 판단하게 한다.
   function findExistingSchedule(candidate) {
@@ -1278,36 +1655,122 @@ export default function MonthlyProgressPage() {
   }
 
   async function saveConfirmedCandidates() {
-    if (!user || !candidates) return;
+    if (!user || (!candidates && !classActivityCandidates)) return;
     setSavingCandidates(true);
     try {
       const now = new Date().toISOString();
-      const toSave = candidates.filter((c) => !c.excluded && c.status !== "no_impact");
 
-      for (const c of toSave) {
-        const payload = omitUndefined({
-          date: c.date,
-          originalText: c.originalText,
-          status: c.status,
-          noRegularClasses: c.noRegularClasses || false,
-          noClassGrades: c.noClassGrades || [],
-          scheduleDayOverride: c.scheduleDayOverride || undefined,
-          regularPeriods: c.regularPeriods || [],
-          affectedGrades: c.affectedGrades || [],
-          affectedPeriods: c.affectedPeriods || [],
-          memo: c.memo || "",
-          source: "ai",
-          updatedAt: now,
-        });
-        const existing = findExistingSchedule(c);
-        if (existing) {
-          // eslint-disable-next-line no-await-in-loop
-          await updateDocById("school_day_schedules", existing.id, payload);
-        } else {
-          // eslint-disable-next-line no-await-in-loop
-          await createDoc("school_day_schedules", user.uid, { ...payload, createdAt: now });
+      if (candidates) {
+        const toSave = candidates.filter((c) => !c.excluded && c.status !== "no_impact");
+
+        for (const c of toSave) {
+          const payload = omitUndefined({
+            date: c.date,
+            originalText: c.originalText,
+            status: c.status,
+            noRegularClasses: c.noRegularClasses || false,
+            noClassGrades: c.noClassGrades || [],
+            scheduleDayOverride: c.scheduleDayOverride || undefined,
+            regularPeriods: c.regularPeriods || [],
+            affectedGrades: c.affectedGrades || [],
+            affectedPeriods: c.affectedPeriods || [],
+            memo: c.memo || "",
+            source: "ai",
+            updatedAt: now,
+          });
+          const existing = findExistingSchedule(c);
+          if (existing) {
+            // eslint-disable-next-line no-await-in-loop
+            await updateDocById("school_day_schedules", existing.id, payload);
+          } else {
+            // eslint-disable-next-line no-await-in-loop
+            await createDoc("school_day_schedules", user.uid, { ...payload, createdAt: now });
+          }
         }
       }
+
+      if (classActivityCandidates) {
+        // "일부 반"인데 실제로 체크된 반이 하나도 없는 후보는 저장하지 않는다 - 이 앱은
+        // classNames 빈 배열 하나로 "전체 반"을 표현하므로, 그대로 저장하면 "전체 반
+        // 대상"으로 잘못 해석된다. 아무 반도 선택하지 않았다는 건 "이 활동은 내 담당 반
+        // 누구에게도 적용되지 않는다"는 뜻이므로, 그냥 저장하지 않는 것이 안전하다.
+        const toSaveActivities = classActivityCandidates.filter(
+          (c) => !c.ignored && !(c.classScope === "partial" && c.classNames.length === 0)
+        );
+
+        if (toSaveActivities.length > 0) {
+          // candidates 저장으로 이미 school_day_schedules가 새로 생기거나 바뀌었을 수
+          // 있으므로(바로 위 블록), 여기서 최신 목록을 다시 읽어 병합 대상(그 날짜의
+          // 기존 문서)을 정확히 찾는다 - 날짜당 문서 1개라는 기존 불변식을 그대로 지킨다.
+          const latestSchedules = await listDocsByOwner("school_day_schedules", user.uid);
+
+          const candidatesByDate = new Map();
+          for (const c of toSaveActivities) {
+            if (!candidatesByDate.has(c.date)) candidatesByDate.set(c.date, []);
+            candidatesByDate.get(c.date).push(c);
+          }
+
+          for (const [date, candsForDate] of candidatesByDate) {
+            const existingDoc = latestSchedules.find((s) => s.date === date);
+            const existingActivities = Array.isArray(existingDoc?.classActivities)
+              ? existingDoc.classActivities
+              : [];
+
+            // 검토 화면에서 교사가 이미 모든 값을 확인했으므로 status는 confirmed로
+            // 저장한다("일부 반" 체크 자체가 이미 모든 값을 명확히 만든 결과다).
+            // source는 "ai_document"로 통일한다(DocumentsPage.jsx가 문서 분석 결과에
+            // 쓰는 것과 같은 기존 값 - 이 앱에서 "문서 분석으로 생성됨"을 뜻하는 기존
+            // 관례를 그대로 재사용한다).
+            const newActivities = candsForDate.map((c) => ({
+              activityName: c.activityName,
+              originalText: c.originalText,
+              grades: c.grades,
+              classNames: c.classScope === "partial" ? c.classNames : [],
+              periods: c.periods,
+              excluded: c.excluded,
+              status: "confirmed",
+              source: "ai_document",
+            }));
+
+            // 같은 활동(이름+학년+반+교시가 전부 같음)이 이미 "ai_document" 출처로
+            // 있으면 그 자리를 갱신한다(같은 파일을 다시 분석/저장해도 무한히 쌓이지
+            // 않음). source가 다른(예: 향후 수동 입력) 기존 활동은 내용이 같아 보여도
+            // 비교 대상이 아니므로 절대 건드리지 않는다.
+            const merged = [...existingActivities];
+            for (const newAct of newActivities) {
+              const dupIndex = merged.findIndex(
+                (a) => a.source === "ai_document" && classActivityContentEquals(a, newAct)
+              );
+              if (dupIndex >= 0) merged[dupIndex] = newAct;
+              else merged.push(newAct);
+            }
+
+            if (existingDoc) {
+              // eslint-disable-next-line no-await-in-loop
+              await updateDocById("school_day_schedules", existingDoc.id, {
+                classActivities: merged,
+                updatedAt: now,
+              });
+            } else {
+              // 그 날짜에 학사일정 해석 자체가 아직 없던 경우 - classActivities만 담은
+              // 최소한의 새 문서를 만든다. remainingLessons.js/effectiveTimetable.js는
+              // 이 문서도 confirmed로 만들어야 방금 확인한 classActivities가 날짜 단위
+              // 해석 필드(noRegularClasses 등)는 없어도 "영향 없음" 상태 그대로 일관되게
+              // 보이게 한다.
+              // eslint-disable-next-line no-await-in-loop
+              await createDoc("school_day_schedules", user.uid, {
+                date,
+                status: "confirmed",
+                originalText: "",
+                classActivities: merged,
+                createdAt: now,
+                updatedAt: now,
+              });
+            }
+          }
+        }
+      }
+
       cancelCandidates();
       reloadSchedules();
     } finally {
@@ -1442,6 +1905,10 @@ export default function MonthlyProgressPage() {
   // 두지 않는다.
   const [showAdjustmentForm, setShowAdjustmentForm] = useState(false);
   const [showDirectScheduleForm, setShowDirectScheduleForm] = useState(false);
+  // "수업 제외 일정"을 AI 분석 없이 직접 추가하는 폼 - 위 showDirectScheduleForm(날짜 단위
+  // 학사일정 직접 추가)과는 완전히 별개의 토글이다. 두 폼이 동시에 열려도 서로 간섭하지
+  // 않는다.
+  const [showDirectActivityForm, setShowDirectActivityForm] = useState(false);
   // 확정된 학사일정 월별 accordion - 펼쳐진 "YYYY-MM" 집합.
   const [expandedScheduleMonths, setExpandedScheduleMonths] = useState(() => new Set());
   function toggleScheduleMonthExpanded(monthKey) {
@@ -1613,6 +2080,185 @@ export default function MonthlyProgressPage() {
     );
   }
 
+  // 저장된 classActivity 하나를 그 자리에서 바로 수정하는 폼. activityEditForm은
+  // startEditActivity가 채워두므로 어느 (문서,인덱스)를 편집 중인지는 editingActivity가
+  // 따로 들고 있다 - 이 함수는 "지금 editingActivity가 가리키는 그 활동"만 그린다.
+  function renderActivityEditForm() {
+    if (!activityEditForm) return null;
+    const gradeClasses = classesForGrades(activityEditForm.grades);
+    return (
+      <div className="pp-schedule-activity pp-schedule-activity--editing">
+        <div className="form" style={{ marginBottom: 4 }}>
+          <div className="field field--grow">
+            <label>활동명</label>
+            <input
+              value={activityEditForm.activityName}
+              onChange={(e) => updateActivityEditForm({ activityName: e.target.value })}
+            />
+          </div>
+          <div className="field">
+            <label>대상 학년</label>
+            <input
+              defaultValue={activityEditForm.grades.join(",")}
+              onBlur={(e) => updateActivityEditFormGrades(e.target.value)}
+              placeholder="예: 3"
+            />
+          </div>
+          <div className="field">
+            <label>교시</label>
+            <input
+              defaultValue={activityEditForm.periods.join(",")}
+              onBlur={(e) => updateActivityEditFormNumberList("periods", e.target.value)}
+              placeholder="예: 1,2,3,4,5,6"
+            />
+          </div>
+          <div className="field field--checkbox">
+            <input
+              type="checkbox"
+              id="activity-edit-excluded"
+              checked={activityEditForm.excluded}
+              onChange={(e) => updateActivityEditForm({ excluded: e.target.checked })}
+            />
+            <label htmlFor="activity-edit-excluded">수업 횟수에서 제외</label>
+          </div>
+        </div>
+        <div className="field" style={{ marginBottom: 4 }}>
+          <label>대상 반</label>
+          <select value={activityEditForm.classScope} onChange={(e) => setActivityEditFormClassScope(e.target.value)}>
+            <option value="all">전체 반</option>
+            <option value="partial">일부 반</option>
+          </select>
+        </div>
+        {activityEditForm.classScope === "partial" && (
+          <div className="pp-activity-class-picker">
+            {gradeClasses.length === 0 ? (
+              <p className="list__meta">대상 학년을 먼저 입력하면 그 학년의 담당 반 목록이 여기 표시됩니다.</p>
+            ) : (
+              gradeClasses.map((cn) => (
+                <label className="pp-activity-class-picker__item" key={cn}>
+                  <input
+                    type="checkbox"
+                    checked={activityEditForm.classNames.includes(cn)}
+                    onChange={() => toggleActivityEditFormClassName(cn)}
+                  />
+                  {formatClassShortName(cn)}
+                </label>
+              ))
+            )}
+          </div>
+        )}
+        <div className="form__actions">
+          <button
+            type="button"
+            className="btn btn--small"
+            disabled={activityEditForm.classScope === "partial" && activityEditForm.classNames.length === 0}
+            onClick={saveActivityEdit}
+          >
+            저장
+          </button>
+          <button type="button" className="btn btn--ghost btn--small" onClick={cancelEditActivity}>
+            취소
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // "수업 제외 일정"을 AI 분석 없이 직접 추가하는 폼. renderActivityEditForm(저장된 활동
+  // 수정)과 거의 같은 구성이지만, 아직 어느 날짜 문서에도 속하지 않은 새 활동이라 "날짜"
+  // 입력이 추가로 필요하다 - 기존 학사일정 직접 추가 폼(renderScheduleForm)의 날짜
+  // 입력과 같은 방식(type="date")을 그대로 쓴다.
+  function renderDirectActivityForm() {
+    const gradeClasses = classesForGrades(directActivityForm.grades);
+    const canSave = canSaveDirectActivity(directActivityForm);
+    return (
+      <div className="pp-schedule-activity pp-schedule-activity--editing" style={{ marginBottom: 16 }}>
+        <div className="form" style={{ marginBottom: 4 }}>
+          <div className="field">
+            <label>날짜</label>
+            <input
+              type="date"
+              value={directActivityForm.date}
+              onChange={(e) => updateDirectActivityForm({ date: e.target.value })}
+              required
+            />
+          </div>
+          <div className="field field--grow">
+            <label>활동명</label>
+            <input
+              value={directActivityForm.activityName}
+              onChange={(e) => updateDirectActivityForm({ activityName: e.target.value })}
+              placeholder="예: 롯데월드, AI윤리교육, 진로체험"
+            />
+          </div>
+          <div className="field">
+            <label>대상 학년</label>
+            <input
+              defaultValue={directActivityForm.grades.join(",")}
+              onBlur={(e) => updateDirectActivityFormGrades(e.target.value)}
+              placeholder="예: 3"
+            />
+          </div>
+          <div className="field">
+            <label>교시</label>
+            <input
+              defaultValue={directActivityForm.periods.join(",")}
+              onBlur={(e) => updateDirectActivityFormNumberList("periods", e.target.value)}
+              placeholder="예: 1,2,3,4,5,6"
+            />
+          </div>
+          <div className="field field--checkbox">
+            <input
+              type="checkbox"
+              id="direct-activity-excluded"
+              checked={directActivityForm.excluded}
+              onChange={(e) => updateDirectActivityForm({ excluded: e.target.checked })}
+            />
+            <label htmlFor="direct-activity-excluded">수업 횟수에서 제외</label>
+          </div>
+        </div>
+        <div className="field" style={{ marginBottom: 4 }}>
+          <label>대상 반</label>
+          <select value={directActivityForm.classScope} onChange={(e) => setDirectActivityFormClassScope(e.target.value)}>
+            <option value="all">전체 반</option>
+            <option value="partial">일부 반</option>
+          </select>
+        </div>
+        {directActivityForm.classScope === "partial" && (
+          <div className="pp-activity-class-picker">
+            {gradeClasses.length === 0 ? (
+              <p className="list__meta">대상 학년을 먼저 입력하면 그 학년의 담당 반 목록이 여기 표시됩니다.</p>
+            ) : (
+              gradeClasses.map((cn) => (
+                <label className="pp-activity-class-picker__item" key={cn}>
+                  <input
+                    type="checkbox"
+                    checked={directActivityForm.classNames.includes(cn)}
+                    onChange={() => toggleDirectActivityFormClassName(cn)}
+                  />
+                  {formatClassShortName(cn)}
+                </label>
+              ))
+            )}
+          </div>
+        )}
+        <div className="form__actions">
+          <button
+            type="button"
+            className="btn btn--small"
+            disabled={!canSave || savingDirectActivity}
+            onClick={saveDirectActivity}
+          >
+            {savingDirectActivity ? "저장 중…" : "저장"}
+          </button>
+          <button type="button" className="btn btn--ghost btn--small" onClick={closeDirectActivityForm}>
+            취소
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   // 학사일정 카드 하나. 이 항목이 지금 편집 중이면(editingScheduleId === s.id) 그 자리에
   // 바로 편집 폼을 보여준다(인라인 편집) - 페이지 위쪽으로 스크롤할 필요가 없다.
   function renderScheduleCard(s) {
@@ -1624,37 +2270,84 @@ export default function MonthlyProgressPage() {
       );
     }
 
+    const activities = Array.isArray(s.classActivities) ? s.classActivities : [];
+
     return (
-      <div className="list__row" key={s.id}>
-        <div className="list__main">
-          <p className="list__title">
-            <span
-              className={`badge badge--${s.status === "confirmed" ? "done" : s.status === "needs_review" ? "high" : "personal"}`}
-            >
-              {STATUS_LABEL[s.status] ?? s.status}
-            </span>
-            {s.date} — {s.originalText}
-          </p>
-          {s.memo && <p className="list__meta">{s.memo}</p>}
+      <div className="list__row" key={s.id} style={{ flexDirection: "column", alignItems: "stretch" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+          <div className="list__main">
+            <p className="list__title">
+              <span
+                className={`badge badge--${s.status === "confirmed" ? "done" : s.status === "needs_review" ? "high" : "personal"}`}
+              >
+                {STATUS_LABEL[s.status] ?? s.status}
+              </span>
+              {s.date} — {s.originalText}
+            </p>
+            {s.memo && <p className="list__meta">{s.memo}</p>}
+          </div>
+          <div className="list__actions">
+            {s.status === "needs_review" && (
+              <>
+                <button className="btn btn--small" onClick={() => quickConfirmSchedule(s)}>
+                  확정
+                </button>
+                <button className="btn btn--ghost btn--small" onClick={() => quickExcludeSchedule(s)}>
+                  제외
+                </button>
+              </>
+            )}
+            <button className="btn btn--ghost btn--small" onClick={() => startEditSchedule(s)}>
+              수정
+            </button>
+            <button className="btn btn--danger btn--small" onClick={() => removeSchedule(s.id)}>
+              삭제
+            </button>
+          </div>
         </div>
-        <div className="list__actions">
-          {s.status === "needs_review" && (
-            <>
-              <button className="btn btn--small" onClick={() => quickConfirmSchedule(s)}>
-                확정
-              </button>
-              <button className="btn btn--ghost btn--small" onClick={() => quickExcludeSchedule(s)}>
-                제외
-              </button>
-            </>
-          )}
-          <button className="btn btn--ghost btn--small" onClick={() => startEditSchedule(s)}>
-            수정
-          </button>
-          <button className="btn btn--danger btn--small" onClick={() => removeSchedule(s.id)}>
-            삭제
-          </button>
-        </div>
+
+        {activities.length > 0 && (
+          // 날짜 카드 자체의 수정/삭제(startEditSchedule/removeSchedule, 위쪽)와는 별개로,
+          // 이 pill 하나하나는 그 classActivity 한 건만 수정/삭제한다(startEditActivity/
+          // deleteClassActivity) - 역할을 분리해 둔다.
+          <div className="pp-activity-chips">
+            {activities.map((activity, index) => {
+              const isEditingThis = editingActivity?.scheduleId === s.id && editingActivity?.index === index;
+              if (isEditingThis) {
+                return (
+                  <div key={index} style={{ flexBasis: "100%" }}>
+                    {renderActivityEditForm()}
+                  </div>
+                );
+              }
+              return (
+                <span className="pp-activity-chip" key={index}>
+                  <span className="pp-activity-chip__name">{activity.activityName}</span>
+                  <span className="pp-activity-chip__meta">{formatActivityTargetLabel(activity)}</span>
+                  {activity.excluded === false && <span className="pp-activity-chip__note">제외 안 함</span>}
+                  <span className="pp-activity-chip__actions">
+                    <button
+                      type="button"
+                      className="pp-activity-chip__action"
+                      aria-label="수업 제외 일정 수정"
+                      onClick={() => startEditActivity(s, index, activity)}
+                    >
+                      ✏
+                    </button>
+                    <button
+                      type="button"
+                      className="pp-activity-chip__action pp-activity-chip__action--danger"
+                      aria-label="수업 제외 일정 삭제"
+                      onClick={() => deleteClassActivity(s, index)}
+                    >
+                      ✕
+                    </button>
+                  </span>
+                </span>
+              );
+            })}
+          </div>
+        )}
       </div>
     );
   }
@@ -2771,8 +3464,10 @@ export default function MonthlyProgressPage() {
             </div>
             {scheduleAnalyzeError && <p className="status status--error">{scheduleAnalyzeError}</p>}
 
-            {candidates && (
+            {(candidates || classActivityCandidates) && (
               <div style={{ marginBottom: 20 }}>
+              {candidates && (
+              <>
                 <p className="list__meta" style={{ marginBottom: 8 }}>
                   AI가 찾은 특별 일정 후보입니다. 아직 저장되지 않았습니다 - 항목별로 확인/수정하고
                   "선택한 항목 저장"을 눌러야 반영됩니다.
@@ -2877,6 +3572,122 @@ export default function MonthlyProgressPage() {
                     );
                   })}
                 </div>
+              </>
+              )}
+
+              {classActivityCandidates && (
+                <>
+                  <h3 className="section__title" style={{ fontSize: 14, marginTop: candidates ? 20 : 0 }}>
+                    수업 제외 일정 후보
+                  </h3>
+                  <p className="list__meta" style={{ marginBottom: 8 }}>
+                    교시별로 학교 자체 교육활동이 있어 일반 교과수업이 이루어지지 않을 수 있는 후보입니다.
+                    아직 저장되지 않았습니다 - "수업 횟수에서 제외" 여부를 직접 확인한 뒤 "선택한 항목 저장"을
+                    눌러야 반영됩니다.
+                  </p>
+                  <div className="list">
+                    {classActivityCandidates.map((c) => {
+                      const gradeClasses = classesForGrades(c.grades);
+                      return (
+                        <div
+                          className="list__row"
+                          key={c._key}
+                          style={{ flexDirection: "column", alignItems: "stretch", opacity: c.ignored ? 0.5 : 1 }}
+                        >
+                          <p className="list__title">
+                            {c.date} — {c.activityName}
+                            <span className="list__meta"> (원문: &ldquo;{c.originalText}&rdquo;)</span>
+                          </p>
+                          <div className="form" style={{ marginBottom: 4 }}>
+                            <div className="field">
+                              <label>날짜</label>
+                              <input
+                                type="date"
+                                value={c.date}
+                                onChange={(e) => updateActivityCandidate(c._key, { date: e.target.value })}
+                              />
+                            </div>
+                            <div className="field field--grow">
+                              <label>활동명</label>
+                              <input
+                                value={c.activityName}
+                                onChange={(e) => updateActivityCandidate(c._key, { activityName: e.target.value })}
+                              />
+                            </div>
+                            <div className="field">
+                              <label>대상 학년</label>
+                              <input
+                                defaultValue={c.grades.join(",")}
+                                onBlur={(e) => updateActivityCandidateGrades(c._key, e.target.value)}
+                                placeholder="예: 3"
+                              />
+                            </div>
+                            <div className="field">
+                              <label>교시</label>
+                              <input
+                                defaultValue={c.periods.join(",")}
+                                onBlur={(e) => updateActivityCandidateNumberList(c._key, "periods", e.target.value)}
+                                placeholder="예: 1,2,3,4,5,6"
+                              />
+                            </div>
+                            <div className="field field--checkbox">
+                              <input
+                                type="checkbox"
+                                id={`act-excluded-${c._key}`}
+                                checked={c.excluded}
+                                onChange={(e) => updateActivityCandidate(c._key, { excluded: e.target.checked })}
+                              />
+                              <label htmlFor={`act-excluded-${c._key}`}>수업 횟수에서 제외</label>
+                            </div>
+                          </div>
+
+                          <div className="field" style={{ marginBottom: 4 }}>
+                            <label>대상 반</label>
+                            <select
+                              value={c.classScope}
+                              onChange={(e) => setActivityCandidateClassScope(c._key, e.target.value)}
+                            >
+                              <option value="all">전체 반</option>
+                              <option value="partial">일부 반</option>
+                            </select>
+                          </div>
+                          {c.classScope === "partial" && (
+                            <div className="pp-activity-class-picker">
+                              {gradeClasses.length === 0 ? (
+                                <p className="list__meta">
+                                  대상 학년을 먼저 입력하면 그 학년의 담당 반 목록이 여기 표시됩니다.
+                                </p>
+                              ) : (
+                                gradeClasses.map((cn) => (
+                                  <label className="pp-activity-class-picker__item" key={cn}>
+                                    <input
+                                      type="checkbox"
+                                      checked={c.classNames.includes(cn)}
+                                      onChange={() => toggleActivityCandidateClassName(c._key, cn)}
+                                    />
+                                    {formatClassShortName(cn)}
+                                  </label>
+                                ))
+                              )}
+                            </div>
+                          )}
+
+                          <div className="form__actions">
+                            <button
+                              type="button"
+                              className="btn btn--ghost btn--small"
+                              onClick={() => updateActivityCandidate(c._key, { ignored: !c.ignored })}
+                            >
+                              {c.ignored ? "제외 취소" : "후보에서 제외"}
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </>
+              )}
+
                 <div className="form__actions" style={{ marginTop: 12 }}>
                   <button className="btn" onClick={saveConfirmedCandidates} disabled={savingCandidates}>
                     {savingCandidates ? "저장 중…" : "선택한 항목 저장"}
@@ -2903,6 +3714,16 @@ export default function MonthlyProgressPage() {
                 다른 일정을 수정하는 중입니다. 수정을 취소하면 새 일정을 추가할 수 있습니다.
               </p>
             )}
+
+            <div className="progress-plan__head" style={{ marginTop: 16 }}>
+              <h3 className="section__title" style={{ fontSize: 14, marginBottom: 0 }}>수업 제외 일정</h3>
+              {!showDirectActivityForm && (
+                <button type="button" className="btn-text" onClick={() => setShowDirectActivityForm(true)}>
+                  + 수업 제외 일정 추가
+                </button>
+              )}
+            </div>
+            {showDirectActivityForm && renderDirectActivityForm()}
 
             <h3 className="section__title" style={{ fontSize: 14, marginTop: 20 }}>확정된 학사일정</h3>
             {confirmedSchedules.length === 0 && <p className="list--empty">등록된 학사일정이 없습니다.</p>}
